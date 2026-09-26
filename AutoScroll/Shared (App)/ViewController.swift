@@ -29,6 +29,14 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        #if os(iOS)
+        view.backgroundColor = .systemBackground
+        #elseif os(macOS)
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
+        #endif
+
+
         // 1. Hide the webview if it exists in Storyboard/XIB
         webView?.isHidden = true
 
