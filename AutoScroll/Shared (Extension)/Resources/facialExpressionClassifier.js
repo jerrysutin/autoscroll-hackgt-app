@@ -90,7 +90,7 @@ function makeInput(ort, box) {
   return new ort.Tensor("float32", data, [1, 1, 64, 64]);
 }
 
-function classify(scores) {
+export function classify(scores) {
   if (
     scores.length !== 8 ||
     !Array.from(scores).every(Number.isFinite)
