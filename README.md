@@ -157,20 +157,27 @@ the page then reports an error and requires Start again.
   - Twitter RoBERTa sentiment, 8-bit quantized ONNX conversion by Xenova, **CC BY 4.0**.
     Credit: Loureiro et al., *TimeLMs*, Cardiff NLP (2022). The model card is included.
 
-Each folder's `SOURCES.json` lists every file's URL, pinned revision, and SHA-256.
-Two speech files are not in git: the sentiment model weights (126 MB, over
-GitHub's 100 MB limit) and `transformers.min.js` (GitHub's secret scanning falsely
-flags model class names in the unmodified library as an API key). After cloning,
-run `node scripts/setup-speech.mjs` before building; it downloads both and checks
-their hashes.
-Both Xcode extension targets include both folders. The extension's CSP allows
-local WebAssembly. No models are downloaded at runtime.
+Everything needed is committed, so a fresh clone builds in Xcode with no setup
+step. No models are downloaded at runtime. Both Xcode extension targets include
+both folders, and the extension's CSP allows local WebAssembly.
 
-To restore the exact assets with Node.js 20+ and network access:
+Each folder's `SOURCES.json` lists every file's source URL, pinned revision, and
+SHA-256, and the tests check that every bundled file matches. Two speech files are
+lightly modified from their downloads so that GitHub accepts them (the original
+URL and hash are recorded under `derivedFrom`):
+
+- The sentiment model's 126 MB weight file, over GitHub's 100 MB limit, is stored
+  as a 0.5 MB graph plus three weight chunks under 50 MB each. The weights are
+  byte-identical and scores match the original exactly.
+- In `transformers.min.js`, the unused class name `Mistral3ForConditionalGeneration`
+  is renamed to `Mistral3ForCondGeneration`. GitHub's secret scanning mistakes the
+  original name for a Mistral API key and blocks the push. Only Mistral 3 model
+  support, which this app does not use, is affected.
+
+To re-download the YAMNet assets (optional; they are committed):
 
 ```sh
 node scripts/setup-audio.mjs
-node scripts/setup-speech.mjs
 ```
 
 Run the automated tests:

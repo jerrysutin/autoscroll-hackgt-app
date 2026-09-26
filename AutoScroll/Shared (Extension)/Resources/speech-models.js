@@ -31,7 +31,8 @@ export async function createSpeechModels(backend) {
     // The sentiment model takes about 70 ms on the CPU, so it always stays there.
     const [transcribe, sentiment] = await Promise.all([
         pipeline('automatic-speech-recognition', 'whisper-tiny.en', WHISPER[backend]),
-        pipeline('text-classification', 'twitter-roberta-base-sentiment-latest', { device: 'wasm', dtype: 'q8' })
+        // Weights are split into three chunks (<50 MB each) so they fit in git.
+        pipeline('text-classification', 'twitter-roberta-base-sentiment-latest', { device: 'wasm', dtype: 'q8', use_external_data_format: 3 })
     ]);
     const models = {
         backend,
