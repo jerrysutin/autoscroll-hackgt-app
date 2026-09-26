@@ -1,0 +1,21 @@
+:root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+body { margin: 0; padding: 24px; }
+main { max-width: 560px; margin: 40px auto; }
+h1 { font-size: 28px; }
+p, small { line-height: 1.6; }
+output { display: block; padding: 28px; margin-top: 28px; border: 1px solid #888; border-radius: 12px; font-size: 32px; text-align: center; }
+output[data-signal="positive"] { border-color: #288447; }
+output[data-signal="negative"] { border-color: #c75a50; }
+.controls { display: flex; gap: 12px; margin: 24px 0; }
+button { font: inherit; padding: 10px 16px; border: 1px solid #888; border-radius: 8px; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible { outline: 3px solid #6a9bff; outline-offset: 3px; }
+small { display: block; opacity: .8; }
+
+select { display: block; max-width: 100%; margin: 8px 0 20px; padding: 8px; font: inherit; }
+.diagnostics { padding: 16px; border: 1px solid #888; border-radius: 8px; }
+.diagnostics p { margin: 8px 0; font-size: 14px; }
+meter { display: block; width: 100%; height: 20px; margin-top: 8px; }
+
+.processing { display: block; margin: 16px 0 8px; }
+#device-help { font-size: 13px; }

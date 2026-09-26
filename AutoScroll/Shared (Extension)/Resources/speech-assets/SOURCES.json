@@ -1,0 +1,146 @@
+{
+  "speech": {
+    "model": "onnx-community/whisper-tiny.en",
+    "revision": "2575352d61be1bf7225cf8f8b268a4678025fc58",
+    "license": "Apache-2.0 (openai/whisper-tiny.en weights)"
+  },
+  "sentiment": {
+    "model": "Xenova/twitter-roberta-base-sentiment-latest",
+    "revision": "f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445",
+    "source": "cardiffnlp/twitter-roberta-base-sentiment-latest",
+    "license": "CC-BY-4.0 (attribution required)",
+    "sourceRevision": "3216a57f2a0d9c45a2e6c20157c20c49fb4bf9c7",
+    "note": "model_quantized.onnx was re-saved with its weights in three external-data chunks under 50 MB (byte-identical tensors, identical scores) so it fits in git; derivedFrom records the original download."
+  },
+  "runtime": {
+    "transformers": "@huggingface/transformers@4.3.0",
+    "onnxruntime": "onnxruntime-web@1.31.0-dev.20260914-8d85527a0",
+    "license": "Apache-2.0 (Transformers.js), MIT (ONNX Runtime)"
+  },
+  "files": {
+    "transformers.min.js": {
+      "sha256": "b36c6c4e8e0e4ab6288cf9e96825b9747a43eadd75bd08c3dcc76705deb72c49",
+      "derivedFrom": {
+        "url": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/dist/transformers.min.js",
+        "sha256": "1475fd440e9932ab206682ee42cb18f6097403e9ee77ea62084c592d0f83597d"
+      },
+      "patch": "Renamed the unused class name Mistral3ForConditionalGeneration to Mistral3ForCondGeneration (3 occurrences). GitHub secret scanning mistakes the 32-character name for a Mistral API key and blocks the push."
+    },
+    "TRANSFORMERS-LICENSE.txt": {
+      "url": "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0/LICENSE",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    "ort-wasm-simd-threaded.asyncify.mjs": {
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/ort-wasm-simd-threaded.asyncify.mjs",
+      "sha256": "0966b6105cd936744498aa60df7a22cbd47af3374dbc64a9ab561c08a71e3611"
+    },
+    "ort-wasm-simd-threaded.asyncify.wasm": {
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.0-dev.20260914-8d85527a0/dist/ort-wasm-simd-threaded.asyncify.wasm",
+      "sha256": "49871f5a4409519797e127440868a6d1923339d9185907f301a5b2a1d90af082"
+    },
+    "models/whisper-tiny.en/config.json": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/config.json",
+      "sha256": "251ea843b5901a99efa58c0b99b8052c6019aa3e7d2baf46693a1128ff606233"
+    },
+    "models/whisper-tiny.en/generation_config.json": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/generation_config.json",
+      "sha256": "7b2e8451ed5f118e75fdd991409d72119d21d2fef1eba9723f68fb9c57fe5dc9"
+    },
+    "models/whisper-tiny.en/preprocessor_config.json": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/preprocessor_config.json",
+      "sha256": "a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d"
+    },
+    "models/whisper-tiny.en/tokenizer.json": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/tokenizer.json",
+      "sha256": "5eb60cec1e77aeeb6869a2bb5a8e01a84c3fe5d072d75369343021fe6f5310d0"
+    },
+    "models/whisper-tiny.en/tokenizer_config.json": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/tokenizer_config.json",
+      "sha256": "93879c3dccdd4b976f709acd85b44778873f30c275e67026f30ca1e4c975230c"
+    },
+    "models/whisper-tiny.en/special_tokens_map.json": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/special_tokens_map.json",
+      "sha256": "98bdf3ec5b32e31575b02f64b0a32bde7c0449075d34484a7df9bdd3cdeb9fb9"
+    },
+    "models/whisper-tiny.en/added_tokens.json": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/added_tokens.json",
+      "sha256": "560be47bea388757f8d4cc185c5d82067426cbb6361e38016dd90ddc01ab203a"
+    },
+    "models/whisper-tiny.en/normalizer.json": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/normalizer.json",
+      "sha256": "bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd"
+    },
+    "models/whisper-tiny.en/onnx/encoder_model_quantized.onnx": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/onnx/encoder_model_quantized.onnx",
+      "sha256": "e93ec822f16a8fd264e7de972ad17d615ea7334b75a52d54c50c2e18dd503a25"
+    },
+    "models/whisper-tiny.en/onnx/decoder_model_merged_quantized.onnx": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/onnx/decoder_model_merged_quantized.onnx",
+      "sha256": "c0592d0749413c960569e1c7fb806b060d5d18f3ebad4a95cbf9a77dc6e9be52"
+    },
+    "models/whisper-tiny.en/README.md": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/README.md",
+      "sha256": "5f1d9253fc9a536c3cd05bcb20128963e6c545c32294bf3cc4e3b5c0bf570c96"
+    },
+    "models/twitter-roberta-base-sentiment-latest/config.json": {
+      "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/config.json",
+      "sha256": "cdf2b36e0066bd9996e3b9fb3f7c095dc656a0e62c6e3a7327d4ff5541e55b51"
+    },
+    "models/twitter-roberta-base-sentiment-latest/tokenizer.json": {
+      "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/tokenizer.json",
+      "sha256": "1e6506713f00e34406a757acb80f9f3233c1c3950857d32bbc41bcd419d5d8b6"
+    },
+    "models/twitter-roberta-base-sentiment-latest/tokenizer_config.json": {
+      "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/tokenizer_config.json",
+      "sha256": "09cb41b20740b45cbbb801d5f66d764cb85a7a62204e999d70f897d05f9f8592"
+    },
+    "models/twitter-roberta-base-sentiment-latest/special_tokens_map.json": {
+      "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/special_tokens_map.json",
+      "sha256": "f23c8e6099631c233c16d9bf8dab198f610826cdd1b358f270f6d55c1863e857"
+    },
+    "models/twitter-roberta-base-sentiment-latest/onnx/model_quantized.onnx": {
+      "sha256": "e766c72dc8c5fc81f556a0829eab9c3fc736e01a0d46178d453d7e9cfcb27ffe",
+      "derivedFrom": {
+        "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/onnx/model_quantized.onnx",
+        "sha256": "046f7e4cc46b399558fa9b2de966f6b0d42c69e4b01f582bfb4099b01a0bb5d7"
+      }
+    },
+    "models/twitter-roberta-base-sentiment-latest/onnx/model_quantized.onnx_data": {
+      "sha256": "c15566a080a20c3e3609820e41a80895900d835f8841c120c269b76ea0719c22",
+      "derivedFrom": {
+        "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/onnx/model_quantized.onnx",
+        "sha256": "046f7e4cc46b399558fa9b2de966f6b0d42c69e4b01f582bfb4099b01a0bb5d7"
+      }
+    },
+    "models/twitter-roberta-base-sentiment-latest/onnx/model_quantized.onnx_data_1": {
+      "sha256": "0e26a3d80c59e1b8bd1031262bf8f9b5ba77996aae510f32efbac9efe838fa6b",
+      "derivedFrom": {
+        "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/onnx/model_quantized.onnx",
+        "sha256": "046f7e4cc46b399558fa9b2de966f6b0d42c69e4b01f582bfb4099b01a0bb5d7"
+      }
+    },
+    "models/twitter-roberta-base-sentiment-latest/onnx/model_quantized.onnx_data_2": {
+      "sha256": "7e8d2b8f4d0d254d1aece8bedd0887b8f9c6ce1d1a51bcf53fddcd11c9acfaac",
+      "derivedFrom": {
+        "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/onnx/model_quantized.onnx",
+        "sha256": "046f7e4cc46b399558fa9b2de966f6b0d42c69e4b01f582bfb4099b01a0bb5d7"
+      }
+    },
+    "models/twitter-roberta-base-sentiment-latest/README.md": {
+      "url": "https://huggingface.co/Xenova/twitter-roberta-base-sentiment-latest/resolve/f3ec4d0925f90c3ca7ee7814f52d6ee7cf180445/README.md",
+      "sha256": "96ef25464320dacfb7880dff4ab831ed53b7c1dcd1516c2fa567cb3997b8dec3"
+    },
+    "models/twitter-roberta-base-sentiment-latest/ORIGINAL-MODEL-CARD.md": {
+      "url": "https://huggingface.co/cardiffnlp/twitter-roberta-base-sentiment-latest/resolve/3216a57f2a0d9c45a2e6c20157c20c49fb4bf9c7/README.md",
+      "sha256": "05ad85143ed60f0abe631ab935485db046c24710d9bec50829b017cfc1e12bf7"
+    },
+    "ONNX-LICENSE.txt": {
+      "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.22.0/LICENSE",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    },
+    "models/whisper-tiny.en/onnx/encoder_model.onnx": {
+      "url": "https://huggingface.co/onnx-community/whisper-tiny.en/resolve/2575352d61be1bf7225cf8f8b268a4678025fc58/onnx/encoder_model.onnx",
+      "sha256": "8c361b9430a5ef6619ee64b7fe06c725df19f36d508cc8b847064b34a888a3fe"
+    }
+  }
+}
