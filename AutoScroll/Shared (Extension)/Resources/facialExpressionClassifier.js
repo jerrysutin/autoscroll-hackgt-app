@@ -19,6 +19,11 @@ const assetURL = path => new URL(path, import.meta.url).href;
 let stream;
 let stopped = false;
 let stage = "Starting camera";
+let latestLabel = null;
+
+export function getLabel() {
+  return latestLabel;
+}
 
 function showError(error) {
   console.error(stage, error);
@@ -256,7 +261,12 @@ async function start() {
 
             if (stopped) break;
 
-            draw(box, classify(outputs[session.outputNames[0]].data));
+            const scores = outputs[session.outputNames[0]].data;
+            const result = classify(scores);
+
+            latestLabel = result.label;
+
+            draw(box, result);
           } finally {
             input.dispose();
             if (outputs) {
