@@ -20,7 +20,7 @@ typealias PlatformColor = NSColor
 typealias PlatformFont = NSFont
 #endif
 
-let extensionBundleIdentifier = "com.autoscroll.AutoScroll.Extension"
+//let extensionBundleIdentifier = "com.autoscroll.AutoScroll.Extension"
 
 class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMessageHandler {
 
@@ -119,7 +119,7 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
         // --- 3. Extension Button ---
         #if os(iOS)
         let button = UIButton(type: .system)
-        button.setTitle("Read the README", for: .normal)
+        button.setTitle("Follow Download Instructions on README", for: .normal)
         button.titleLabel?.font = .boldSystemFont(ofSize: 17)
         button.setTitleColor(.white, for: .normal)
         button.backgroundColor = .systemBlue
@@ -127,7 +127,7 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
         button.contentEdgeInsets = UIEdgeInsets(top: 14, left: 24, bottom: 14, right: 24)
         button.addTarget(self, action: #selector(openExtensionPressed), for: .touchUpInside)
         #elseif os(macOS)
-        let button = NSButton(title: "Read the README", target: self, action: #selector(openExtensionPressed))
+        let button = NSButton(title: "Follow Download Instructions on README", target: self, action: #selector(openExtensionPressed))
         button.bezelStyle = .rounded
         button.font = .boldSystemFont(ofSize: 15)
         #endif
