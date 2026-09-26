@@ -51,13 +51,13 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
         stackView.axis = .vertical
         stackView.alignment = .center
         stackView.distribution = .equalSpacing
-        stackView.spacing = 16
+        stackView.spacing = 4
         #elseif os(macOS)
         let stackView = NSStackView()
         stackView.orientation = .vertical
         stackView.alignment = .centerX
         stackView.distribution = .gravityAreas
-        stackView.spacing = 16
+        stackView.spacing = 4
         #endif
 
         stackView.translatesAutoresizingMaskIntoConstraints = false
@@ -65,19 +65,43 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
 
         // Constraint stack view to parent view bounds with padding
         NSLayoutConstraint.activate([
-            stackView.topAnchor.constraint(equalTo: view.topAnchor, constant: 40),
+            stackView.topAnchor.constraint(equalTo: view.topAnchor, constant: 80),
             stackView.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -30),
             stackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             stackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20)
         ])
 
         // --- 1. Header ---
-        let headerLabel = createLabel(
-            text: "AutoScroll",
-            font: .boldSystemFont(ofSize: 40),
-            color: .labelColor
-        )
-        stackView.addArrangedSubview(headerLabel)
+        let logoView = PlatformView()
+        logoView.translatesAutoresizingMaskIntoConstraints = false
+        #if os(iOS)
+        let logoLayer = logoView.layer
+        logoLayer.contents = UIImage(named: "AppLogo")?.cgImage
+        logoView.isAccessibilityElement = true
+        logoView.accessibilityLabel = "AutoScroll"
+        logoView.accessibilityTraits = .image
+        #elseif os(macOS)
+        logoView.wantsLayer = true
+        let logoLayer = CALayer()
+        logoView.layer = logoLayer
+        logoLayer.contents = NSImage(named: "AppLogo")?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        logoView.setAccessibilityElement(true)
+        logoView.setAccessibilityLabel("AutoScroll")
+        logoView.setAccessibilityRole(.image)
+        #endif
+        // Show the logo band in the supplied square image without its empty margins.
+        // Match the view's aspect ratio to this band to preserve the artwork's shape.
+        logoLayer.contentsRect = CGRect(x: 0, y: 0.35, width: 1, height: 0.26)
+        logoLayer.contentsGravity = .resize
+        logoLayer.masksToBounds = true
+        stackView.addArrangedSubview(logoView)
+        let preferredLogoWidth = logoView.widthAnchor.constraint(equalToConstant: 280)
+        preferredLogoWidth.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            preferredLogoWidth,
+            logoView.widthAnchor.constraint(lessThanOrEqualTo: stackView.widthAnchor),
+            logoView.heightAnchor.constraint(equalTo: logoView.widthAnchor, multiplier: 0.26)
+        ])
 
         // --- 2. Mission Statement ---
         let missionLabel = createLabel(
@@ -107,25 +131,27 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
 
         // --- 4. Camera Section ---
         let cameraBlock = createFeatureSection(
-            systemImageName: "camera.fill",
-            title: "Camera",
-            description: "Uses your camera to capture your facial expressions while you browse."
+            systemImageNames: ["camera.fill", "mic.fill"],
+            title: "Camera + Microphone",
+            description: "Captures your expressions and voice as you browse."
         )
         stackView.addArrangedSubview(cameraBlock)
+        stackView.setCustomSpacing(0, after: cameraBlock)
 
         // --- 5. Face Detection Section ---
         let faceBlock = createFeatureSection(
-            systemImageName: "face.smiling.fill",
-            title: "Face Detection",
-            description: "Detects your facial expressions to understand your reactions to the content."
+            systemImageNames: ["face.smiling.fill", "waveform"],
+            title: "Face Detection + Audio",
+            description: "Reads facial and audio cues to understand your reactions."
         )
         stackView.addArrangedSubview(faceBlock)
+        stackView.setCustomSpacing(0, after: faceBlock)
 
         // --- 6. Auto Scroll Section ---
         let scrollBlock = createFeatureSection(
-            systemImageName: "arrow.down.circle.fill",
+            systemImageNames: ["arrow.down.circle.fill"],
             title: "Auto Scroll",
-            description: "Uses your reactions to decide when to automatically scroll to the next video."
+            description: "Moves to the next video based on your reactions."
         )
         stackView.addArrangedSubview(scrollBlock)
 
@@ -155,34 +181,48 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
 
     // MARK: - UI Helper Methods
 
-    private func createFeatureSection(systemImageName: String, title: String, description: String) -> PlatformView {
+    private func createFeatureSection(systemImageNames: [String], title: String, description: String) -> PlatformView {
         #if os(iOS)
         let sectionStack = UIStackView()
         sectionStack.axis = .vertical
         sectionStack.alignment = .center
-        sectionStack.spacing = 6
+        sectionStack.spacing = 0
 
-        let imageView = UIImageView(image: UIImage(systemName: systemImageName))
-        imageView.tintColor = .systemBlue
-        imageView.contentMode = .scaleAspectFit
-        NSLayoutConstraint.activate([
-            imageView.heightAnchor.constraint(equalToConstant: 30),
-            imageView.widthAnchor.constraint(equalToConstant: 30)
-        ])
-        sectionStack.addArrangedSubview(imageView)
+        let iconStack = UIStackView()
+        iconStack.axis = .horizontal
+        iconStack.alignment = .center
+        iconStack.spacing = 6
+        for systemImageName in systemImageNames {
+            let imageView = UIImageView(image: UIImage(systemName: systemImageName))
+            imageView.tintColor = .systemBlue
+            imageView.contentMode = .scaleAspectFit
+            NSLayoutConstraint.activate([
+                imageView.heightAnchor.constraint(equalToConstant: 30),
+                imageView.widthAnchor.constraint(equalToConstant: 30)
+            ])
+            iconStack.addArrangedSubview(imageView)
+        }
+        sectionStack.addArrangedSubview(iconStack)
         #elseif os(macOS)
         let sectionStack = NSStackView()
         sectionStack.orientation = .vertical
         sectionStack.alignment = .centerX
-        sectionStack.spacing = 6
+        sectionStack.spacing = 0
 
-        let imageView = NSImageView(image: NSImage(systemSymbolName: systemImageName, accessibilityDescription: title) ?? NSImage())
-        imageView.contentTintColor = .systemBlue
-        NSLayoutConstraint.activate([
-            imageView.heightAnchor.constraint(equalToConstant: 30),
-            imageView.widthAnchor.constraint(equalToConstant: 30)
-        ])
-        sectionStack.addArrangedSubview(imageView)
+        let iconStack = NSStackView()
+        iconStack.orientation = .horizontal
+        iconStack.alignment = .centerY
+        iconStack.spacing = 6
+        for systemImageName in systemImageNames {
+            let imageView = NSImageView(image: NSImage(systemSymbolName: systemImageName, accessibilityDescription: title) ?? NSImage())
+            imageView.contentTintColor = .systemBlue
+            NSLayoutConstraint.activate([
+                imageView.heightAnchor.constraint(equalToConstant: 30),
+                imageView.widthAnchor.constraint(equalToConstant: 30)
+            ])
+            iconStack.addArrangedSubview(imageView)
+        }
+        sectionStack.addArrangedSubview(iconStack)
         #endif
 
         let titleLabel = createLabel(text: title, font: .boldSystemFont(ofSize: 16), color: .labelColor)
