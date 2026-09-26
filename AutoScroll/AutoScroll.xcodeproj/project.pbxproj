@@ -106,9 +106,9 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Resources/_locales,
-				Resources/audio-assets,
-				Resources/audio-demo.js,
-				Resources/audio-worklet.js,
+				"Resources/audio-assets",
+				"Resources/audio-demo.js",
+				"Resources/audio-worklet.js",
 				Resources/audio.css,
 				Resources/audio.html,
 				Resources/audio.js,
@@ -120,6 +120,11 @@
 				Resources/popup.html,
 				Resources/popup.js,
 				Resources/scroll.js,
+				"Resources/speech-assets",
+				"Resources/speech-core.js",
+				"Resources/speech-models.js",
+				"Resources/speech-worker.js",
+				Resources/speech.js,
 				SafariWebExtensionHandler.swift,
 			);
 			target = D41E97C9306759F5002F37D0 /* AutoScroll Extension (iOS) */;
@@ -128,9 +133,9 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Resources/_locales,
-				Resources/audio-assets,
-				Resources/audio-demo.js,
-				Resources/audio-worklet.js,
+				"Resources/audio-assets",
+				"Resources/audio-demo.js",
+				"Resources/audio-worklet.js",
 				Resources/audio.css,
 				Resources/audio.html,
 				Resources/audio.js,
@@ -142,6 +147,11 @@
 				Resources/popup.html,
 				Resources/popup.js,
 				Resources/scroll.js,
+				"Resources/speech-assets",
+				"Resources/speech-core.js",
+				"Resources/speech-models.js",
+				"Resources/speech-worker.js",
+				Resources/speech.js,
 				SafariWebExtensionHandler.swift,
 			);
 			target = D41E97D3306759F5002F37D0 /* AutoScroll Extension (macOS) */;
@@ -166,8 +176,9 @@
 			);
 			explicitFolders = (
 				Resources/_locales,
-				Resources/audio-assets,
+				"Resources/audio-assets",
 				Resources/images,
+				"Resources/speech-assets",
 			);
 			path = "Shared (Extension)";
 			sourceTree = "<group>";

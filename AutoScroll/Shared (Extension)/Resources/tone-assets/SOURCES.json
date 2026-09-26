@@ -1,0 +1,39 @@
+{
+  "model": "onnx-community/wav2vec2-emotion-recognition-ONNX",
+  "revision": "8e0e66145d3a67fb99291f7834d35f073581114b",
+  "license": "MIT (model card), MIT (ONNX Runtime)",
+  "files": {
+    "config.json": {
+      "url": "https://huggingface.co/onnx-community/wav2vec2-emotion-recognition-ONNX/resolve/8e0e66145d3a67fb99291f7834d35f073581114b/config.json",
+      "sha256": "6e6f37a556c837587b07692a17bb9380339625f4eb82aa5b19b8d435e508bb92"
+    },
+    "preprocessor_config.json": {
+      "url": "https://huggingface.co/onnx-community/wav2vec2-emotion-recognition-ONNX/resolve/8e0e66145d3a67fb99291f7834d35f073581114b/preprocessor_config.json",
+      "sha256": "617bd0950f8cc9ac4062e8c73a7be60305ca5790a243df55fa6f44fb671b55b1"
+    },
+    "model.onnx": {
+      "url": "https://huggingface.co/onnx-community/wav2vec2-emotion-recognition-ONNX/resolve/8e0e66145d3a67fb99291f7834d35f073581114b/onnx/model_q4.onnx",
+      "sha256": "363653a4bce950ddd17026efdabdf6c7a6843e00089bcbaf424c0cdf0b6ebff2"
+    },
+    "MODEL-CARD.md": {
+      "url": "https://huggingface.co/onnx-community/wav2vec2-emotion-recognition-ONNX/resolve/8e0e66145d3a67fb99291f7834d35f073581114b/README.md",
+      "sha256": "920fb6fb0d024c1935327f1560c23271ddd9d32c9e9a88db7b5a9bc398921a94"
+    },
+    "ONNX-LICENSE.txt": {
+      "url": "https://raw.githubusercontent.com/microsoft/onnxruntime/v1.22.0/LICENSE",
+      "sha256": "2f07c72751aed99790b8a4869cf2311df85a860b22ded05fa22803587a48922c"
+    },
+    "ort.wasm.min.mjs": {
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.wasm.min.mjs",
+      "sha256": "6ef726f355b791129f7ddf3f62e7877a16b9b777abe87004b8ab306e6b9cf265"
+    },
+    "ort-wasm-simd-threaded.mjs": {
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort-wasm-simd-threaded.mjs",
+      "sha256": "30dd851d9c00622940500f71ddd2ff8820c5cb65270816080175b958705385a8"
+    },
+    "ort-wasm-simd-threaded.wasm": {
+      "url": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort-wasm-simd-threaded.wasm",
+      "sha256": "71aef04959c5c1b6de461b6538e2058e306610034a85aad2742d0c7fd4533fe4"
+    }
+  }
+}

@@ -60,3 +60,9 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+
+# Restore these with `node scripts/setup-speech.mjs` (pinned URLs and SHA-256s
+# in SOURCES.json). The sentiment model exceeds GitHub's 100 MB file limit, and
+# GitHub's secret scanning falsely flags the unmodified Transformers.js build.
+AutoScroll/Shared (Extension)/Resources/speech-assets/models/twitter-roberta-base-sentiment-latest/onnx/model_quantized.onnx
+AutoScroll/Shared (Extension)/Resources/speech-assets/transformers.min.js

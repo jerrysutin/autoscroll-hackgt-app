@@ -42,7 +42,7 @@ function makeClassifier(classify = () => 'positive') {
 async function setup(options = {}) {
     const env = {
         contexts: [], worklets: [], streams: [], classifiers: [], signals: [], states: [], errors: [],
-        mediaRequests: [], modelRequests: 0, resamples: []
+        now: 10000, windowEnd: 0, phraseStarts: new Map(), mediaRequests: [], modelRequests: 0, resamples: [], diagnostics: [], inputLevels: []
     };
     class AudioContext {
         constructor() {
@@ -75,7 +75,14 @@ async function setup(options = {}) {
         }
         connect(target) { this.target = target; }
         disconnect() { this.disconnects++; }
-        emit(samples) { this.port.onmessage?.({ data: samples }); }
+        emit(data) {
+            if (data instanceof Float32Array) {
+                const startSample = env.windowEnd;
+                env.windowEnd += data.length;
+                data = { type: 'window', samples: data, startSample, endSample: env.windowEnd };
+            }
+            this.port.onmessage?.({ data });
+        }
     }
     class OfflineAudioContext {
         constructor(channels, length, rate) {
@@ -97,7 +104,8 @@ async function setup(options = {}) {
         }
     }
     const context = vm.createContext({
-        URL, Float32Array, AudioContext, AudioWorkletNode, OfflineAudioContext,
+        Date: class extends Date { static now() { return env.now; } },
+        URL, Float32Array, AbortController, AudioContext, AudioWorkletNode, OfflineAudioContext,
         navigator: { mediaDevices: { getUserMedia: constraints => {
             env.mediaRequests.push(constraints);
             if (options.getUserMedia) return options.getUserMedia(env);
@@ -106,7 +114,7 @@ async function setup(options = {}) {
             return Promise.resolve(stream);
         } } }
     });
-    const module = new vm.SourceTextModule(`${source}\nexport { labelFromScores };`, {
+    const module = new vm.SourceTextModule(`${source}\nexport { labelFromScores, prepareWaveform };`, {
         context,
         identifier: audioPath,
         initializeImportMeta(meta) { meta.url = pathToFileURL(audioPath).href; }
@@ -114,8 +122,13 @@ async function setup(options = {}) {
     await module.link(() => { throw new Error('Unexpected module dependency'); });
     await module.evaluate();
     env.labelFromScores = module.namespace.labelFromScores;
+    env.prepareWaveform = module.namespace.prepareWaveform;
     env.detector = module.namespace.createAudioDetector({
+        loadSpeechClassifier: options.loadSpeechClassifier || null,
+        onSpeech: data => (env.speech ||= []).push(data),
         onSignal: signal => env.signals.push(signal),
+        onDiagnostics: data => env.diagnostics.push(data),
+        onInput: data => env.inputLevels.push(data),
         onError: error => env.errors.push(error),
         onStateChange: state => env.states.push(state),
         loadClassifier: () => {
@@ -130,6 +143,26 @@ async function setup(options = {}) {
         env.worklets.at(-1).emit(samples);
         await settle();
     };
+    // Sound reactions need two consecutive windows; this confirms one.
+    env.react = async (make = loudWindow) => {
+        await env.emit(make());
+        await env.emit(make());
+    };
+    // Advance past the reaction hold and deliver a meter tick.
+    env.expire = async () => {
+        env.now += 3000;
+        await env.emit({ type: 'level', rms: 0, hasInput: true });
+    };
+    env.beginPhrase = async id => {
+        env.phraseStarts.set(id, env.windowEnd);
+        await env.emit({ type: 'phrase-start', utteranceId: id, startSample: env.windowEnd });
+    };
+    env.endPhrase = id => {
+        const startSample = env.phraseStarts.get(id);
+        const endSample = env.windowEnd;
+        return env.emit({ type: 'phrase', utteranceId: id, startSample, endSample,
+            samples: new Float32Array(endSample - startSample).fill(0.1), finalized: 'silence' });
+    };
     return env;
 }
 
@@ -137,8 +170,8 @@ test('maps YAMNet vocal classes to labels and excludes unrelated sounds', async 
     const { labelFromScores } = await setup();
     for (const [label, classes] of [
         ['positive', [13, 15, 16, 17, 18]],
-        ['negative', [19, 21, 22, 33]],
-        ['neutral', [0, 14, 20, 34]]
+        ['negative', [19, 21, 22, 23, 33, 34]],
+        ['neutral', [0, 14, 20, 36]]
     ]) {
         for (const index of classes) {
             const scores = new Float32Array(521);
@@ -149,14 +182,18 @@ test('maps YAMNet vocal classes to labels and excludes unrelated sounds', async 
     assert.equal(labelFromScores(new Float32Array(521)), 'neutral');
 });
 
-test('weak and conflicting sound scores stay neutral, dominant reactions win', async () => {
+test('reaction scores below 0.01 stay neutral and stronger qualifying scores win', async () => {
     const { labelFromScores } = await setup();
     const scores = new Float32Array(521);
-    scores[13] = 0.3;
+    scores[13] = 0.009;
     assert.equal(labelFromScores(scores), 'neutral');
+    scores[13] = 0.011;
+    assert.equal(labelFromScores(scores), 'positive');
+    scores[13] = 0.2;
+    assert.equal(labelFromScores(scores), 'positive', 'weaker laughter now clears the standard threshold');
     scores[13] = 0.8;
     scores[33] = 0.75;
-    assert.equal(labelFromScores(scores), 'neutral');
+    assert.equal(labelFromScores(scores), 'positive');
     scores[33] = 0.5;
     assert.equal(labelFromScores(scores), 'positive');
     scores[33] = 1;
@@ -192,10 +229,10 @@ test('start is idempotent while active, stop releases resources, and restart wor
     assert.equal(env.mediaRequests[0].video, false);
     assert.equal(env.modelRequests, 1);
     assert.equal(env.worklets[0].name, 'autoscroll-microphone');
-    assert.equal(env.worklets[0].settings.processorOptions.windowSamples, 16000);
+    assert.equal(env.worklets[0].settings.processorOptions.windowSamples, 15600);
     assert.match(env.contexts[0].moduleURL, /audio-worklet\.js$/);
     assert.equal(await env.detector.start(), true);
-    await env.emit(loudWindow());
+    await env.react();
     assert.equal(env.detector.getSignal(), 'positive');
     await env.detector.stop();
     await env.detector.stop();
@@ -214,27 +251,32 @@ test('start is idempotent while active, stop releases resources, and restart wor
     assert.equal(env.classifiers[1].disposals, 1);
 });
 
-test('silence publishes neutral without running model inference', async () => {
+test('a confirmed reaction is held through silence, then expires to neutral without inference', async () => {
     const env = await setup();
     await env.detector.start();
     await env.emit(loudWindow());
+    assert.equal(env.detector.getSignal(), 'neutral', 'one window is not enough');
+    await env.emit(loudWindow());
     assert.equal(env.detector.getSignal(), 'positive');
     await env.emit(new Float32Array(16000));
+    assert.equal(env.detector.getSignal(), 'positive', 'silence does not cut a reaction short');
+    await env.expire();
     assert.equal(env.detector.getSignal(), 'neutral');
-    assert.equal(env.classifiers[0].inputs.length, 1);
+    assert.equal(env.classifiers[0].inputs.length, 2);
+    assert.deepEqual(env.signals, ['positive', 'neutral'], 'output changes only when the label changes');
     await env.detector.stop();
 });
 
-test('device audio is resampled to one second of mono 16 kHz before classification', async () => {
+test('device audio preserves the complete patch duration when resampled to mono 16 kHz', async () => {
     const env = await setup({ sampleRate: 48000 });
     await env.detector.start();
-    const input = new Float32Array(48000).fill(0.1);
+    const input = new Float32Array(46800).fill(0.1);
     await env.emit(input);
-    assert.equal(env.worklets[0].settings.processorOptions.windowSamples, 48000);
+    assert.equal(env.worklets[0].settings.processorOptions.windowSamples, 46800);
     const conversion = env.resamples[0];
     assert.equal(conversion.channels, 1);
     assert.equal(conversion.rate, 16000);
-    assert.equal(conversion.length, 16000);
+    assert.equal(conversion.length, 15600);
     assert.equal(conversion.buffer.rate, 48000);
     assert.equal(conversion.buffer.samples, input);
     assert.equal(conversion.source.started, true);
@@ -306,7 +348,7 @@ test('stopped inference never publishes into a new session and disposes after co
     assert.equal(oldClassifier.disposals, 0, 'model must remain alive while inference uses it');
     assert.equal(env.streams[0].track.stops, 1, 'microphone stops immediately');
     await env.detector.start();
-    await env.emit(loudWindow());
+    await env.react();
     assert.equal(env.detector.getSignal(), 'positive');
     const publishedBefore = [...env.signals];
     inference.resolve('negative');
@@ -328,10 +370,10 @@ test('busy inference drops incoming windows instead of queuing old reactions', a
     await env.emit(loudWindow());
     await env.emit(loudWindow());
     assert.equal(classifier.inputs.length, 1);
-    inference.resolve('positive');
+    inference.resolve('negative');
     await settle();
     assert.equal(classifier.inputs.length, 1, 'dropped windows must not run later');
-    assert.equal(env.detector.getSignal(), 'positive');
+    assert.equal(env.detector.getSignal(), 'neutral', 'dropped windows do not count toward confirmation');
     await env.emit(loudWindow());
     assert.equal(classifier.inputs.length, 2);
     assert.equal(env.detector.getSignal(), 'negative');
@@ -366,39 +408,361 @@ test('invalid classifier labels fail safely and clear previous reactions', async
     assert.ok(env.signals.every(value => ['positive', 'negative', 'neutral'].includes(value)));
 });
 
-test('worklet downmixes stereo, emits repeated transferred windows, and outputs silence', () => {
-    const messages = [];
-    let Processor;
-    class AudioWorkletProcessor {
-        constructor() {
-            this.port = {
-                postMessage(samples, transfer) {
-                    assert.equal(transfer[0], samples.buffer);
-                    messages.push(structuredClone(samples, { transfer }));
-                    assert.equal(samples.length, 0, 'simulate actual ArrayBuffer transfer detachment');
-                }
-            };
-        }
+test('quiet reactions reach the model while near-silence still skips it', async () => {
+    const env = await setup();
+    await env.detector.start();
+    await env.react(() => new Float32Array(16000).fill(0.004));
+    assert.equal(env.classifiers[0].inputs.length, 2);
+    assert.equal(env.detector.getSignal(), 'positive');
+    assert.ok(env.diagnostics.at(-1).inputDb < -40);
+    await env.emit(new Float32Array(16000).fill(0.0001));
+    assert.equal(env.classifiers[0].inputs.length, 2);
+    assert.equal(env.diagnostics.at(-1).reason, 'quiet');
+    await env.expire();
+    assert.equal(env.detector.getSignal(), 'neutral');
+    await env.detector.stop();
+    assert.equal(env.diagnostics.at(-1), null);
+});
+
+test('ties and weak negative evidence stay neutral; the exact threshold qualifies', async () => {
+    const { labelFromScores, detector } = await setup();
+    const scores = new Float32Array(521);
+    assert.equal(labelFromScores(scores), 'neutral');
+    scores[13] = scores[33] = 0.2;
+    assert.equal(labelFromScores(scores), 'neutral');
+    scores[13] = 0;
+    scores[33] = 0.009;
+    assert.equal(labelFromScores(scores), 'neutral');
+    const exactScores = new Array(521).fill(0);
+    exactScores[33] = 0.01;
+    assert.equal(labelFromScores(exactScores), 'negative');
+    exactScores[33] = 0;
+    exactScores[13] = 0.01;
+    assert.equal(labelFromScores(exactScores), 'positive');
+    assert.throws(() => detector.setSensitivity('unknown'), /Unknown audio sensitivity/);
+});
+
+test('sensitivity changes are passed to the classifier without changing signal output', async () => {
+    const options = [];
+    const classifier = makeClassifier();
+    classifier.classify = async (samples, profile) => { options.push(profile); return 'neutral'; };
+    const env = await setup({ loadClassifier: async () => classifier });
+    await env.detector.start();
+    await env.emit(loudWindow());
+    assert.equal(options[0].threshold, 0.01);
+    env.detector.setSensitivity('high');
+    await env.emit(loudWindow());
+    assert.equal(options[1].threshold, 0.01);
+    assert.equal(env.detector.getSignal(), 'neutral');
+    await env.detector.stop();
+});
+
+
+test('chosen microphone is requested exactly and processing can be disabled', async () => {
+    const env = await setup();
+    await env.detector.start({ deviceId: 'built-in-mic', processing: false });
+    const constraints = env.mediaRequests[0];
+    assert.equal(constraints.audio.deviceId.exact, 'built-in-mic');
+    for (const key of ['echoCancellation', 'noiseSuppression', 'autoGainControl']) assert.equal(constraints.audio[key], false);
+    assert.equal(constraints.video, false);
+    await env.detector.stop();
+});
+
+test('meter updates while AI inference is busy and stops when capture stops', async () => {
+    const inference = deferred();
+    const env = await setup({ classify: () => inference.promise });
+    await env.detector.start();
+    await env.emit(loudWindow());
+    const handler = env.worklets[0].port.onmessage;
+    handler({ data: { type: 'level', rms: 0.1, hasInput: true } });
+    assert.equal(env.inputLevels.at(-1).inputDb, -20);
+    assert.equal(env.inputLevels.at(-1).hasInput, true);
+    assert.equal(env.classifiers[0].inputs.length, 1);
+    const stopped = env.detector.stop();
+    assert.equal(env.inputLevels.at(-1), null);
+    const count = env.inputLevels.length;
+    handler({ data: { type: 'level', rms: 0.2, hasInput: true } });
+    assert.equal(env.inputLevels.length, count);
+    inference.resolve('positive');
+    await stopped;
+});
+
+test('missing selected microphone reports an actionable error without falling back silently', async () => {
+    const env = await setup({ getUserMedia: () => Promise.reject(Object.assign(new Error('device missing'), { name: 'OverconstrainedError' })) });
+    await assert.rejects(env.detector.start({ deviceId: 'removed' }), /selected microphone is unavailable/);
+    assert.equal(env.detector.getState(), 'error');
+});
+
+test('quiet audible waveforms get bounded gain without changing the captured samples', async () => {
+    const { prepareWaveform } = await setup();
+    const samples = new Float32Array(16000).map((_, i) => 0.004 * Math.sin(2 * Math.PI * 440 * i / 16000));
+    const original = samples.slice();
+    const result = prepareWaveform(samples);
+    assert.ok(result.inputGain > 1 && result.inputGain <= 32);
+    assert.ok(Math.abs(result.modelRms - 0.05) < 1e-6);
+    assert.deepEqual(samples, original);
+    assert.ok(result.samples.every(value => Math.abs(value) <= 0.95));
+});
+
+test('normalization does not boost near-silence or already loud audio, and respects peak headroom', async () => {
+    const { prepareWaveform } = await setup();
+    assert.equal(prepareWaveform(new Float32Array(16000)).inputGain, 1);
+    assert.equal(prepareWaveform(new Float32Array(16000).fill(0.0001)).inputGain, 1);
+    assert.equal(prepareWaveform(new Float32Array(16000).fill(0.2)).inputGain, 1);
+    const quiet = prepareWaveform(new Float32Array(16000).fill(0.0011));
+    assert.equal(quiet.inputGain, 32);
+    const spike = new Float32Array(16000).fill(0.003);
+    spike[0] = 0.8;
+    const limited = prepareWaveform(spike);
+    assert.ok(limited.inputGain <= 0.95 / 0.8);
+    assert.ok(limited.samples.every(value => Math.abs(value) <= 0.951));
+    assert.throws(() => prepareWaveform(new Float32Array([NaN])), /Invalid microphone samples/);
+});
+
+
+test('near-silence and sensitivity changes reset accumulated classifier evidence', async () => {
+    const classifier = makeClassifier();
+    let resets = 0;
+    classifier.reset = () => { resets++; };
+    const env = await setup({ loadClassifier: async () => classifier });
+    await env.detector.start();
+    assert.equal(env.worklets[0].settings.processorOptions.hopSamples, 3840);
+    await env.emit(loudWindow());
+    await env.emit(new Float32Array(15600));
+    assert.equal(resets, 1);
+    assert.equal(env.detector.getSignal(), 'neutral');
+    env.detector.setSensitivity('high');
+    assert.equal(resets, 2);
+    await env.detector.stop();
+});
+
+test('speech model failure leaves sound reactions listening and reports why', async () => {
+    const env = await setup({ loadSpeechClassifier: async () => { throw new Error('assets missing'); } });
+    await env.detector.start();
+    await env.react();
+    assert.equal(env.detector.getSignal(), 'positive');
+    assert.equal(env.detector.getState(), 'listening');
+    assert.equal(env.speech.at(-1).status, 'unavailable');
+    assert.equal(env.speech.at(-1).message, 'assets missing');
+    await env.detector.stop();
+});
+
+test('stopping aborts speech model loading and disposes a late adapter', async () => {
+    const loading = deferred();
+    let aborted = false;
+    let disposed = false;
+    const env = await setup({ loadSpeechClassifier: ({ signal }) => {
+        signal.addEventListener('abort', () => { aborted = true; });
+        return loading.promise;
+    } });
+    await env.detector.start();
+    await settle();
+    await env.detector.stop();
+    assert.equal(aborted, true);
+    const count = env.speech.length;
+    loading.resolve({ dispose() { disposed = true; } });
+    await settle();
+    assert.equal(disposed, true);
+    assert.equal(env.speech.length, count);
+});
+
+test('YAMNet uses the restored 0.01 cutoff with no extra negative margin', async () => {
+    const { labelFromScores } = await setup();
+    const scores = new Array(521).fill(0);
+    scores[33] = 0.01;
+    assert.equal(labelFromScores(scores), 'negative');
+    scores[13] = 0.0099;
+    assert.equal(labelFromScores(scores), 'negative');
+    scores[13] = 0.0101;
+    assert.equal(labelFromScores(scores), 'positive');
+});
+
+
+function speechClassifier(signal = () => 'neutral') {
+    const classifier = makeClassifier(signal);
+    classifier.getDiagnostics = () => ({ topIndex: 0, topScore: 0.8, speechScore: 0.8, positive: 0, negative: 0 });
+    return classifier;
+}
+
+
+function words(signal, transcript = 'test phrase') {
+    return { signal, transcript, reason: signal === 'neutral' ? 'neutral-statement' : 'sentiment',
+        scores: { positive: 0, neutral: 0, negative: 0 } };
+}
+
+function speechAdapter(classify) {
+    const adapter = { calls: 0, disposals: 0, classify(samples) { adapter.calls++; return classify(samples, adapter.calls); },
+        dispose() { adapter.disposals++; } };
+    return adapter;
+}
+
+test('a short negative statement drives the output after its pause, then expires', async () => {
+    const pending = deferred();
+    const speech = speechAdapter(() => pending.promise);
+    const env = await setup({ loadClassifier: async () => speechClassifier(), loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    assert.equal(env.speech.at(-1).status, 'transcribing');
+    await env.emit(new Float32Array(15600));
+    pending.resolve(words('negative', 'this is so boring'));
+    await settle();
+    assert.equal(env.detector.getSignal(), 'negative');
+    assert.equal(env.speech.at(-1).status, 'result');
+    assert.equal(env.speech.at(-1).transcript, 'this is so boring');
+    assert.equal(env.diagnostics.at(-1).source, 'words');
+    env.now += 2900;
+    await env.emit({ type: 'level', rms: 0, hasInput: true });
+    assert.equal(env.detector.getSignal(), 'negative', 'held for three seconds');
+    env.now += 100;
+    await env.emit({ type: 'level', rms: 0, hasInput: true });
+    assert.equal(env.detector.getSignal(), 'neutral');
+    await env.detector.stop();
+});
+
+test('starting to speak and neutral statements never clear a held reaction', async () => {
+    let result = words('positive', 'I love this');
+    const speech = speechAdapter(async () => result);
+    const env = await setup({ loadClassifier: async () => speechClassifier(), loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    assert.equal(env.detector.getSignal(), 'positive');
+    result = words('neutral', 'hold on');
+    await env.beginPhrase(2);
+    assert.equal(env.detector.getSignal(), 'positive', 'phrase start does not reset output');
+    await env.emit(loudWindow());
+    await env.endPhrase(2);
+    assert.equal(speech.calls, 2);
+    assert.equal(env.detector.getSignal(), 'positive');
+    assert.deepEqual(env.signals, ['positive']);
+    await env.detector.stop();
+});
+
+test('the newest reaction wins across sounds and words', async () => {
+    const speech = speechAdapter(async () => words('negative', 'skip this'));
+    const laughter = makeClassifier(() => 'positive');
+    laughter.getDiagnostics = () => ({ topIndex: 13, topScore: 0.5, positive: 0.5 });
+    const env = await setup({ loadClassifier: async () => laughter, loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.react();
+    assert.equal(env.detector.getSignal(), 'positive');
+    assert.equal(env.diagnostics.at(-1).source, 'sound');
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    assert.equal(env.detector.getSignal(), 'negative');
+    await env.detector.stop();
+});
+
+test('a phrase waits for pending YAMNet voice evidence instead of dropping short speech', async () => {
+    const yamnet = deferred();
+    const speech = speechAdapter(async () => words('negative'));
+    const env = await setup({ loadClassifier: async () => speechClassifier(() => yamnet.promise), loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    assert.equal(speech.calls, 0);
+    yamnet.resolve('neutral');
+    await settle();
+    assert.equal(speech.calls, 1);
+    assert.equal(env.detector.getSignal(), 'negative');
+    await env.detector.stop();
+});
+
+test('while busy, only the newest waiting phrase is analyzed next', async () => {
+    const first = deferred();
+    const speech = speechAdapter((samples, call) => call === 1 ? first.promise : words('positive'));
+    const env = await setup({ loadClassifier: async () => speechClassifier(), loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    for (const id of [1, 2, 3]) {
+        await env.beginPhrase(id);
+        await env.emit(loudWindow());
+        await env.endPhrase(id);
     }
-    vm.runInNewContext(fs.readFileSync(path.join(resources, 'audio-worklet.js'), 'utf8'), {
-        AudioWorkletProcessor, Float32Array,
-        registerProcessor(name, value) {
-            assert.equal(name, 'autoscroll-microphone');
-            Processor = value;
-        }
-    });
-    const worklet = new Processor({ processorOptions: { windowSamples: 4 } });
-    const output = [new Float32Array(6).fill(1), new Float32Array(6).fill(1)];
-    assert.equal(worklet.process([[
-        new Float32Array([0, 2, 4, 6, 8, 10]),
-        new Float32Array([2, 4, 6, 8, 10, 12])
-    ]], [output]), true);
-    assert.deepEqual(Array.from(messages[0]), [1, 3, 5, 7]);
-    assert.ok(output.every(channel => channel.every(value => value === 0)));
-    worklet.process([[new Float32Array([12, 14, 16, 18, 20, 22])]], [[]]);
-    assert.deepEqual(messages.map(samples => Array.from(samples)), [
-        [1, 3, 5, 7], [9, 11, 12, 14], [16, 18, 20, 22]
-    ]);
-    assert.equal(worklet.process([], [[new Float32Array(2).fill(1)]]), true);
-    assert.equal(messages.length, 3);
+    assert.equal(speech.calls, 1);
+    first.resolve(words('negative'));
+    await settle();
+    assert.equal(speech.calls, 2, 'phrase 2 was replaced by phrase 3');
+    assert.equal(env.detector.getSignal(), 'positive');
+    await env.detector.stop();
+});
+
+test('music or noise is never transcribed, and results after stop are ignored', async () => {
+    const pending = deferred();
+    let topIndex = 137;
+    const classifier = makeClassifier(() => 'neutral');
+    classifier.getDiagnostics = () => ({ topIndex });
+    const speech = speechAdapter(() => pending.promise);
+    const env = await setup({ loadClassifier: async () => classifier, loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    await env.emit(new Float32Array(48000));
+    assert.equal(speech.calls, 0, 'Whisper invents words for music, so it never sees it');
+    assert.equal(env.speech.at(-1).reason, 'no-voice');
+    topIndex = 12;
+    await env.beginPhrase(2);
+    await env.emit(loudWindow());
+    await env.endPhrase(2);
+    assert.equal(speech.calls, 1);
+    await env.detector.stop();
+    const count = env.signals.length;
+    pending.resolve(words('negative'));
+    await settle();
+    assert.equal(env.signals.length, count);
+    assert.equal(env.detector.getSignal(), 'neutral');
+});
+
+test('a phrase result that arrives too late is dropped', async () => {
+    const pending = deferred();
+    const speech = speechAdapter(() => pending.promise);
+    const env = await setup({ loadClassifier: async () => speechClassifier(), loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    env.now += 8001;
+    pending.resolve(words('negative'));
+    await settle();
+    assert.equal(env.detector.getSignal(), 'neutral');
+    await env.detector.stop();
+});
+
+test('a groan mixed with louder speech is a negative sound; tiny incidental scores are not', async () => {
+    for (const [negative, expected] of [[0.3, 'negative'], [0.03, 'neutral']]) {
+        const classifier = speechClassifier(() => 'neutral');
+        classifier.getDiagnostics = () => ({ topIndex: 0, speechScore: 0.6, topScore: 0.6, positive: 0.01, negative, rawNegative: negative });
+        const env = await setup({ loadClassifier: async () => classifier });
+        await env.detector.start();
+        await env.react();
+        assert.equal(env.detector.getSignal(), expected, `negative score ${negative}`);
+        await env.detector.stop();
+    }
+    for (const topIndex of [23, 33, 34]) {
+        const classifier = makeClassifier(() => 'negative');
+        classifier.getDiagnostics = () => ({ topIndex, topScore: 0.5, negative: 0.5 });
+        const env = await setup({ loadClassifier: async () => classifier });
+        await env.detector.start();
+        await env.react();
+        assert.equal(env.detector.getSignal(), 'negative', `class ${topIndex}`);
+        await env.detector.stop();
+    }
+});
+
+test('a sigh or groan phrase is also transcribed, since YAMNet counts it as a voice', async () => {
+    const classifier = makeClassifier(() => 'negative');
+    classifier.getDiagnostics = () => ({ topIndex: 33, topScore: 0.5, negative: 0.5 });
+    const speech = speechAdapter(async () => words('negative', 'ugh'));
+    const env = await setup({ loadClassifier: async () => classifier, loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    assert.equal(speech.calls, 1);
+    await env.detector.stop();
 });

@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval'; object-src 'self'">
+<title>Tone worker smoke test</title>
+<h1>Tone worker smoke test</h1>
+<p>No microphone is used. Tests the bundled worker on synthetic silence; this does not measure emotion accuracy.</p>
+<button id="run">Run local inference</button>
+<pre id="result">Waiting.</pre>
+<script type="module" src="tone-browser.js"></script>
