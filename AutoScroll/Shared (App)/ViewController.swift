@@ -119,7 +119,7 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
         // --- 3. Extension Button ---
         #if os(iOS)
         let button = UIButton(type: .system)
-        button.setTitle("Open AutoScroll Extension", for: .normal)
+        button.setTitle("Read the README", for: .normal)
         button.titleLabel?.font = .boldSystemFont(ofSize: 17)
         button.setTitleColor(.white, for: .normal)
         button.backgroundColor = .systemBlue
@@ -127,7 +127,7 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
         button.contentEdgeInsets = UIEdgeInsets(top: 14, left: 24, bottom: 14, right: 24)
         button.addTarget(self, action: #selector(openExtensionPressed), for: .touchUpInside)
         #elseif os(macOS)
-        let button = NSButton(title: "Open AutoScroll Extension", target: self, action: #selector(openExtensionPressed))
+        let button = NSButton(title: "Read the README", target: self, action: #selector(openExtensionPressed))
         button.bezelStyle = .rounded
         button.font = .boldSystemFont(ofSize: 15)
         #endif
@@ -172,14 +172,11 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
     // MARK: - Action
 
     @objc private func openExtensionPressed() {
+        let readmeURL = URL(string: "https://github.com/jerrysutin/autoscroll-hackgt-app#readme")!
         #if os(macOS)
-        SFSafariApplication.showPreferencesForExtension(withIdentifier: extensionBundleIdentifier) { error in
-            if let error = error {
-                print("Could not open Safari Extension preferences: \(error)")
-            }
-        }
+        NSWorkspace.shared.open(readmeURL)
         #elseif os(iOS)
-        print("Safari Extension settings are managed through iOS Settings.")
+        UIApplication.shared.open(readmeURL)
         #endif
     }
 
