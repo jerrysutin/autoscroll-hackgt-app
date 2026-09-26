@@ -1,5 +1,8 @@
 {
     "manifest_version": 3,
+    "content_security_policy": {
+        "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    },
     "default_locale": "en",
 
     "name": "__MSG_extension_name__",
@@ -29,9 +32,5 @@
         "default_icon": "images/toolbar-icon.svg"
     },
 
-    "permissions": [ ],
-
-    "content_security_policy": {
-        "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
-    }
+    "permissions": [ ]
 }

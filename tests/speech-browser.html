@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="script-src 'self' 'wasm-unsafe-eval'; object-src 'self'">
+<title>Speech worker smoke test</title>
+<h1>Speech worker smoke test</h1>
+<p>No microphone is used. Runs the bundled Whisper and sentiment worker on three synthesized statements.</p>
+<button id="run">Run local inference</button>
+<pre id="result">Waiting.</pre>
+<script type="module" src="speech-browser.js"></script>
