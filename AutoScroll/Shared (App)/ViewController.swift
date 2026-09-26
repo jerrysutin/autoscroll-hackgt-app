@@ -95,6 +95,10 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
         logoLayer.contentsGravity = .resize
         logoLayer.masksToBounds = true
         stackView.addArrangedSubview(logoView)
+        // Add a small spacing after the logo for visual separation
+        stackView.setCustomSpacing(2, after: logoView)
+
+
         let preferredLogoWidth = logoView.widthAnchor.constraint(equalToConstant: 280)
         preferredLogoWidth.priority = .defaultHigh
         NSLayoutConstraint.activate([
