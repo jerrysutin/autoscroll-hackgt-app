@@ -159,14 +159,6 @@ class ViewController: PlatformViewController, WKNavigationDelegate, WKScriptMess
         )
         stackView.addArrangedSubview(scrollBlock)
 
-        // --- 7. Footer ---
-        let footerLabel = createLabel(
-            text: "Control your scrolling without touching your screen.",
-            font: .systemFont(ofSize: 12),
-            color: .secondaryLabelColor,
-            alignment: .center
-        )
-        stackView.addArrangedSubview(footerLabel)
     }
 
     // MARK: - Action
