@@ -3,8 +3,13 @@
  *  - Sounds: YAMNet hears laughter (positive) or groans/sighs/crying (negative).
  *  - Words: each spoken phrase is transcribed on-device (Whisper) and its text
  *    sentiment is scored (RoBERTa). See speech-core.js for the rules.
- * The newest non-neutral event is held for HOLD_MS, then output returns to neutral.
- * onSignal receives ONLY "positive", "negative", or "neutral", and only on change.
+ *
+ * Decision input (never neutral):
+ *  - listen({ timeoutMs }) resolves with the next "positive" or "negative"
+ *    reaction heard after the request, or null if none arrives in time.
+ *  - onSignal(signal, { source, transcript }) is called once per new reaction.
+ * Display only: onLabel("positive" | "negative" | "neutral") reports the held
+ * label; each reaction is held for HOLD_MS, then it returns to neutral.
  * Call start() from a user gesture in a persistent page, and stop() on pagehide.
  */
 const SAMPLE_RATE = 16000;
@@ -212,16 +217,20 @@ function directReaction(yamnet) {
 }
 
 /**
- * Example: const audio = createAudioDetector({ onSignal: signal => decision(signal) });
- * await audio.start(); // from a click handler
- * await audio.stop();
+ * Example (decision.js):
+ *   const audio = createAudioDetector();
+ *   await audio.start();                              // from a click handler
+ *   const reaction = await audio.listen({ timeoutMs: 5000 });
+ *   if (reaction === 'negative') skip();              // null: no reaction heard
+ *   audio.stop();
  * loadClassifier / loadSpeechClassifier are optional adapters for tests or other
  * models. Pass loadSpeechClassifier: null to use sounds only.
  */
-export function createAudioDetector({ onSignal = () => {}, onError = () => {}, onStateChange = () => {}, onDiagnostics = () => {}, onInput = () => {}, onSpeech = () => {}, loadSpeechClassifier = loadDefaultSpeech, loadClassifier = loadYamnet } = {}) {
+export function createAudioDetector({ onSignal = () => {}, onLabel = () => {}, onError = () => {}, onStateChange = () => {}, onDiagnostics = () => {}, onInput = () => {}, onSpeech = () => {}, loadSpeechClassifier = loadDefaultSpeech, loadClassifier = loadYamnet } = {}) {
     let current = null;
     let state = 'idle';
-    let signal = 'neutral';
+    let label = 'neutral';
+    let waiters = [];
     let sensitivity = 'standard';
 
     function setSensitivity(value) {
@@ -231,11 +240,38 @@ export function createAudioDetector({ onSignal = () => {}, onError = () => {}, o
     }
 
     const setState = value => { state = value; onStateChange(value); };
-    const publish = value => {
-        if (value === signal) return;
-        signal = value;
-        onSignal(value);
+    const setLabel = value => {
+        if (value === label) return;
+        label = value;
+        onLabel(value);
     };
+    // Decision output: one call per new reaction, never neutral.
+    function emit(value, detail) {
+        onSignal(value, detail);
+        for (const waiter of waiters.slice()) waiter.finish(value);
+    }
+
+    function listen({ timeoutMs = 5000, signal: abort } = {}) {
+        if (state !== 'listening' && state !== 'starting') {
+            return Promise.reject(new Error('Start the microphone before listening.'));
+        }
+        return new Promise(resolve => {
+            let timer = null;
+            const cancel = () => waiter.finish(null);
+            const waiter = {
+                finish(value) {
+                    clearTimeout(timer);
+                    abort?.removeEventListener('abort', cancel);
+                    waiters = waiters.filter(item => item !== waiter);
+                    resolve(value);
+                }
+            };
+            if (abort?.aborted) { resolve(null); return; }
+            if (Number.isFinite(timeoutMs)) timer = setTimeout(cancel, timeoutMs);
+            abort?.addEventListener('abort', cancel, { once: true });
+            waiters.push(waiter);
+        });
+    }
     const active = session => current === session;
 
     function release(session) {
@@ -261,7 +297,8 @@ export function createAudioDetector({ onSignal = () => {}, onError = () => {}, o
         const session = current;
         current = null; // invalidates late permission/model/inference results
         if (session) release(session);
-        publish('neutral');
+        setLabel('neutral');
+        for (const waiter of waiters.slice()) waiter.finish(null);
         onDiagnostics(null);
         onInput(null);
         onSpeech(null);
@@ -280,21 +317,27 @@ export function createAudioDetector({ onSignal = () => {}, onError = () => {}, o
     // until it expires. Neutral results never cut a held reaction short.
     function react(session, value, source, detail = {}) {
         if (!active(session) || value === 'neutral') return;
+        const held = session.event;
+        // A laugh that keeps going refreshes its hold; it is not a new reaction.
+        // Every spoken phrase is a new reaction, even with the same label.
+        const continuing = source === 'sound' && held?.source === 'sound' && held.signal === value &&
+            Date.now() - held.at < HOLD_MS;
         session.event = { signal: value, source, at: Date.now(), ...detail };
-        publish(value);
+        setLabel(value);
+        if (!continuing) emit(value, { source, ...detail });
     }
 
     function expire(session) {
         if (session.event && Date.now() - session.event.at >= HOLD_MS) {
             session.event = null;
-            publish('neutral');
+            setLabel('neutral');
         }
     }
 
     function report(session) {
         if (!session.yamnet) return;
         onDiagnostics({ ...session.yamnet, soundSignal: session.soundSignal,
-            combinedSignal: signal, source: session.event?.source || null,
+            combinedSignal: label, source: session.event?.source || null,
             decisionReason: session.event ? `${session.event.source}-reaction` : 'no-reaction' });
     }
 
@@ -403,7 +446,7 @@ export function createAudioDetector({ onSignal = () => {}, onError = () => {}, o
         const context = new AudioContext();
         const session = { context, busy: false, speechBusy: false, history: [], audioEnd: 0, event: null, streak: null, soundSignal: 'neutral' };
         current = session;
-        publish('neutral');
+        setLabel('neutral');
         onDiagnostics(null);
         onInput(null);
         setState('starting');
@@ -512,5 +555,5 @@ export function createAudioDetector({ onSignal = () => {}, onError = () => {}, o
         return session.ready;
     }
 
-    return Object.freeze({ start, stop, setSensitivity, getSignal: () => signal, getState: () => state });
+    return Object.freeze({ start, stop, listen, setSensitivity, getSignal: () => label, getState: () => state });
 }

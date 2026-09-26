@@ -105,7 +105,7 @@ async function setup(options = {}) {
     }
     const context = vm.createContext({
         Date: class extends Date { static now() { return env.now; } },
-        URL, Float32Array, AbortController, AudioContext, AudioWorkletNode, OfflineAudioContext,
+        URL, Float32Array, AbortController, AudioContext, AudioWorkletNode, OfflineAudioContext, setTimeout, clearTimeout,
         navigator: { mediaDevices: { getUserMedia: constraints => {
             env.mediaRequests.push(constraints);
             if (options.getUserMedia) return options.getUserMedia(env);
@@ -126,7 +126,8 @@ async function setup(options = {}) {
     env.detector = module.namespace.createAudioDetector({
         loadSpeechClassifier: options.loadSpeechClassifier || null,
         onSpeech: data => (env.speech ||= []).push(data),
-        onSignal: signal => env.signals.push(signal),
+        onSignal: (signal, detail) => { env.signals.push(signal); (env.details ||= []).push(detail); },
+        onLabel: label => (env.labels ||= []).push(label),
         onDiagnostics: data => env.diagnostics.push(data),
         onInput: data => env.inputLevels.push(data),
         onError: error => env.errors.push(error),
@@ -263,7 +264,8 @@ test('a confirmed reaction is held through silence, then expires to neutral with
     await env.expire();
     assert.equal(env.detector.getSignal(), 'neutral');
     assert.equal(env.classifiers[0].inputs.length, 2);
-    assert.deepEqual(env.signals, ['positive', 'neutral'], 'output changes only when the label changes');
+    assert.deepEqual(env.signals, ['positive'], 'decision output never reports neutral');
+    assert.deepEqual(env.labels, ['positive', 'neutral'], 'the display label returns to neutral');
     await env.detector.stop();
 });
 
@@ -765,4 +767,78 @@ test('a sigh or groan phrase is also transcribed, since YAMNet counts it as a vo
     await env.endPhrase(1);
     assert.equal(speech.calls, 1);
     await env.detector.stop();
+});
+
+
+test('listen() resolves with the next positive or negative reaction, never neutral', async () => {
+    let result = words('neutral', 'hold on');
+    const speech = speechAdapter(async () => result);
+    const env = await setup({ loadClassifier: async () => speechClassifier(), loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    let settled = null;
+    const request = env.detector.listen({ timeoutMs: 60000 }).then(value => { settled = value; });
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    await settle();
+    assert.equal(settled, null, 'a neutral statement does not answer the request');
+    assert.deepEqual(env.signals, []);
+    result = words('negative', 'skip this');
+    await env.beginPhrase(2);
+    await env.emit(loudWindow());
+    await env.endPhrase(2);
+    await request;
+    assert.equal(settled, 'negative');
+    assert.equal(env.details.at(-1).source, 'words');
+    assert.equal(env.details.at(-1).transcript, 'skip this');
+    await env.detector.stop();
+});
+
+test('listen() only counts reactions after the request, and each phrase is a new reaction', async () => {
+    const speech = speechAdapter(async () => words('negative', 'boring'));
+    const env = await setup({ loadClassifier: async () => speechClassifier(), loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    await env.endPhrase(1);
+    assert.equal(env.detector.getSignal(), 'negative', 'an earlier reaction is still held');
+    let settled = 'pending';
+    const request = env.detector.listen({ timeoutMs: 60000 }).then(value => { settled = value; });
+    await settle();
+    assert.equal(settled, 'pending', 'a reaction from before the request does not answer it');
+    await env.beginPhrase(2);
+    await env.emit(loudWindow());
+    await env.endPhrase(2);
+    await request;
+    assert.equal(settled, 'negative');
+    assert.deepEqual(env.signals, ['negative', 'negative'], 'two negative statements are two reactions');
+    await env.detector.stop();
+});
+
+test('a continuing laugh is one reaction until its hold expires', async () => {
+    const env = await setup();
+    await env.detector.start();
+    await env.react();
+    await env.emit(loudWindow());
+    await env.emit(loudWindow());
+    assert.deepEqual(env.signals, ['positive']);
+    await env.expire();
+    await env.react();
+    assert.deepEqual(env.signals, ['positive', 'positive'], 'a new laugh after the hold is a new reaction');
+    await env.detector.stop();
+});
+
+test('listen() gives null on timeout, abort, or stop, and rejects before start', async () => {
+    const env = await setup();
+    await assert.rejects(env.detector.listen(), /Start the microphone/);
+    await env.detector.start();
+    assert.equal(await env.detector.listen({ timeoutMs: 5 }), null);
+    const controller = new AbortController();
+    const aborted = env.detector.listen({ timeoutMs: 60000, signal: controller.signal });
+    controller.abort();
+    assert.equal(await aborted, null);
+    const stopped = env.detector.listen({ timeoutMs: 60000 });
+    await env.detector.stop();
+    assert.equal(await stopped, null);
+    assert.deepEqual(env.signals, []);
 });

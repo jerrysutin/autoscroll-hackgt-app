@@ -17,6 +17,8 @@ const refresh = document.querySelector('#refresh-devices');
 const deviceHelp = document.querySelector('#device-help');
 const processing = document.querySelector('#processing');
 const inputStatus = document.querySelector('#input-status');
+const listenButton = document.querySelector('#listen');
+const listenResult = document.querySelector('#listen-result');
 let lastInput = 0;
 let deviceRequest = 0;
 
@@ -70,9 +72,10 @@ const audio = createAudioDetector({
             : data.status === 'listening' && data.backend ? `${messages.listening} Running on the ${data.backend === 'gpu' ? 'GPU' : 'CPU'}.`
             : messages[data.status];
     },
-    onSignal(signal) {
-        output.textContent = signal;
-        output.dataset.signal = signal;
+    // Display only; decision.js uses listen() or onSignal, which never report neutral.
+    onLabel(label) {
+        output.textContent = label;
+        output.dataset.signal = label;
     },
     onInput(data) {
         if (!data) {
@@ -124,6 +127,7 @@ const audio = createAudioDetector({
         start.disabled = state === 'starting' || state === 'listening';
         stop.disabled = !start.disabled;
         device.disabled = processing.disabled = start.disabled;
+        listenButton.disabled = state !== 'listening';
     },
     onError(error) { status.textContent = error.message; }
 });
@@ -142,4 +146,17 @@ navigator.mediaDevices?.addEventListener?.('devicechange', refreshDevices);
 refreshDevices();
 start.addEventListener('click', () => { audio.start({ deviceId: device.value, processing: processing.checked }).catch(() => {}); });
 stop.addEventListener('click', () => { audio.stop(); });
+// Same request decision.js will make: wait up to 5 s for a positive/negative reaction.
+listenButton.addEventListener('click', async () => {
+    listenButton.disabled = true;
+    listenResult.textContent = 'Listening for 5 seconds… react now.';
+    try {
+        const reaction = await audio.listen({ timeoutMs: 5000 });
+        listenResult.textContent = reaction ? `Result sent: ${reaction}` : 'No positive or negative reaction in 5 seconds (nothing sent).';
+    } catch (error) {
+        listenResult.textContent = error.message;
+    } finally {
+        listenButton.disabled = audio.getState() !== 'listening';
+    }
+});
 window.addEventListener('pagehide', () => { audio.stop(); });

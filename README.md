@@ -5,24 +5,37 @@ Safari extension for reaction-controlled Shorts and Reels navigation.
 ## Audio reactions
 
 `AutoScroll/Shared (Extension)/Resources/audio.js` listens to the microphone and
-reports whether you are reacting **positively**, **negatively**, or **neutrally**.
-Everything runs on your Mac. No audio is recorded, uploaded, or sent to any service.
+tells the future `decision.js` whether you reacted **positively** or **negatively**.
+Neutral is never sent: if you don't react, nothing is reported. Everything runs on
+your Mac. No audio is recorded, uploaded, or sent to any service.
 
 ```js
 import { createAudioDetector } from './audio.js';
 
-const audio = createAudioDetector({
-    onSignal(signal) {
-        // "positive", "negative", or "neutral" — called only when it changes.
-        console.log(signal);
-    },
-    onError(error) { console.error(error.message); }
-});
+const audio = createAudioDetector({ onError(error) { console.error(error.message); } });
 
 startButton.addEventListener('click', () => { audio.start().catch(console.error); });
 stopButton.addEventListener('click', () => { audio.stop(); });
 window.addEventListener('pagehide', () => { audio.stop(); });
+
+// In decision.js: ask for the next reaction, e.g. when a new video starts.
+const reaction = await audio.listen({ timeoutMs: 5000 });
+if (reaction === 'negative') { /* skip */ }
+if (reaction === 'positive') { /* keep watching */ }
+if (reaction === null) { /* no reaction within 5 s: nothing was sent */ }
 ```
+
+`listen({ timeoutMs = 5000, signal })` resolves with the **next** positive or
+negative reaction heard **after** the request; a reaction from before the request
+does not count. It resolves `null` on timeout, when the optional `AbortSignal`
+aborts, or when the microphone stops. It rejects if the microphone was never
+started. Several requests may wait at once; one reaction answers them all.
+`timeoutMs: Infinity` waits until a reaction or stop.
+
+To react to everything instead of asking, pass `onSignal(signal, { source,
+transcript })`. It is called once per new reaction, never with neutral. `source` is
+`"words"` or `"sound"`. Every spoken phrase is a new reaction, even two negative
+phrases in a row; a laugh that keeps going is one reaction.
 
 Use it in a persistent page such as the audio test tab, not a popup or background
 script. `start()` must run from a user gesture. `start({ deviceId, processing: false })`
@@ -110,7 +123,9 @@ video is transcribed too unless you use headphones.
    microphone is wrong, Stop, choose it in the selector, and Start again.
 5. Say something short and pause: "that's hilarious", "ugh, skip this",
    "I'll be right back". The page shows what it heard, the sentiment scores, and
-   the label. Laughing or groaning also works. Click **Stop** to release the mic.
+   the label. Laughing or groaning also works. **Listen once (5 s)** makes the same
+   request `decision.js` will and shows the result it would receive. Click **Stop**
+   to release the mic.
 
 The microphone meter updates about ten times per second, independently of the
 models. If the macOS Sound input meter moves but this one does not, select the same
@@ -129,7 +144,9 @@ only; it is not connected to scrolling.
 
 ### Callbacks
 
-- `onSignal(label)`: the only input for decisions.
+- `listen()` / `onSignal(signal, detail)`: decision input, positive or negative only (see above).
+- `onLabel(label)`: the held label for display, including neutral. Each reaction is
+  held for 3 seconds, then it returns to neutral. `getSignal()` returns the same label.
 - `onSpeech(status)`: `loading`, `listening`, `hearing`, `transcribing`,
   `result` (with `transcript`, `signal`, `reason`, `scores`, timings), `unavailable`,
   or `disabled`. If the speech models fail, sound reactions keep working.
