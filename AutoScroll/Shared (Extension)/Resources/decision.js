@@ -14,3 +14,11 @@ const negativeEmotions = [
   "fear",
   "contempt"
 ];
+
+export function decide(emotion) {
+  if (negativeEmotions.includes(emotion)) {
+    return "scroll";
+  } else {
+    return "watch";
+  }
+}
