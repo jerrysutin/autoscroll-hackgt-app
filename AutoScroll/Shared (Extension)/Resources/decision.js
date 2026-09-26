@@ -1,3 +1,5 @@
+import { classify } from "./facialExpressionClassifier.js";
+
 const positiveEmotions = [
   "happiness",
   "surprise"
