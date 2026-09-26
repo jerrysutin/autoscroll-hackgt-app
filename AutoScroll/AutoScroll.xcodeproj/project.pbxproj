@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		D41E97CB306759F5002F37D0 /* AutoScroll Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D41E97CA306759F5002F37D0 /* AutoScroll Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D41E97D5306759F5002F37D0 /* AutoScroll Extension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = D41E97D4306759F5002F37D0 /* AutoScroll Extension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		D49C797330680F72001A2B00 /* vendor in Resources */ = {isa = PBXBuildFile; fileRef = D49C797230680F72001A2B00 /* vendor */; };
+		D49C797530680F82001A2B00 /* models in Resources */ = {isa = PBXBuildFile; fileRef = D49C797430680F82001A2B00 /* models */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -54,6 +56,8 @@
 		D41E97BF306759F5002F37D0 /* AutoScroll.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AutoScroll.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		D41E97CA306759F5002F37D0 /* AutoScroll Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "AutoScroll Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D41E97D4306759F5002F37D0 /* AutoScroll Extension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = "AutoScroll Extension.appex"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D49C797230680F72001A2B00 /* vendor */ = {isa = PBXFileReference; lastKnownFileType = folder; name = vendor; path = "Shared (Extension)/Resources/vendor"; sourceTree = "<group>"; };
+		D49C797430680F82001A2B00 /* models */ = {isa = PBXFileReference; lastKnownFileType = folder; name = models; path = "Shared (Extension)/Resources/models"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -108,6 +112,8 @@
 				Resources/_locales,
 				Resources/background.js,
 				Resources/content.js,
+				Resources/debug.html,
+				Resources/facialExpressionClassifier.js,
 				Resources/images,
 				Resources/manifest.json,
 				Resources/popup.css,
@@ -123,6 +129,8 @@
 				Resources/_locales,
 				Resources/background.js,
 				Resources/content.js,
+				Resources/debug.html,
+				Resources/facialExpressionClassifier.js,
 				Resources/images,
 				Resources/manifest.json,
 				Resources/popup.css,
@@ -215,6 +223,8 @@
 		D41E9790306759F5002F37D0 = {
 			isa = PBXGroup;
 			children = (
+				D49C797430680F82001A2B00 /* models */,
+				D49C797230680F72001A2B00 /* vendor */,
 				D41E9795306759F5002F37D0 /* Shared (App) */,
 				D41E979E306759F5002F37D0 /* Shared (Extension) */,
 				D41E97AF306759F5002F37D0 /* iOS (App) */,
@@ -384,6 +394,8 @@
 		D41E97D2306759F5002F37D0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
+				D49C797530680F82001A2B00 /* models in Resources */,
+				D49C797330680F72001A2B00 /* vendor in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
