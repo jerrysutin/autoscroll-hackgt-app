@@ -1,4 +1,4 @@
-import { classify } from "./facialExpressionClassifier.js";
+import { classify, getLabel } from "./facialExpressionClassifier.js";
 
 const positiveEmotions = [
   "happiness",
@@ -17,8 +17,16 @@ const negativeEmotions = [
   "contempt"
 ];
 
-export function decide(emotion) {
-  if (negativeEmotions.includes(emotion)) {
+export function decide() {
+  const label = getLabel();
+
+  if (!label) {
+    return null;
+  }
+
+  const result = classify(label);
+
+  if (negativeEmotions.includes(result)) {
     return "scroll";
   } else {
     return "watch";
