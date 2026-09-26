@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AutoScroll — Audio test</title>
+    <link rel="stylesheet" href="audio.css">
+    <script type="module" src="audio-demo.js"></script>
+</head>
+<body>
+    <main>
+        <h1>Audio reactions</h1>
+        <p>Test your microphone before connecting it to scrolling.</p>
+        <output id="signal" aria-live="polite">neutral</output>
+        <p id="status" role="status">Microphone is off.</p>
+        <div class="controls">
+            <button id="start" type="button">Start listening</button>
+            <button id="stop" type="button" disabled>Stop</button>
+        </div>
+        <p>Laughter and chuckling → positive. Crying and groaning → negative. Uncertain sounds → neutral.</p>
+        <p>Use headphones so the video’s audio is less likely to trigger a reaction. This test recognizes sounds, not the meaning of spoken words.</p>
+        <small>Audio is processed on your device and is never recorded or uploaded. Keep this tab open while listening; closing it stops the microphone.</small>
+    </main>
+</body>
+</html>
