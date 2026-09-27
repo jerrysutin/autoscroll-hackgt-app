@@ -5,13 +5,32 @@
 const HALLUCINATIONS = new Set(['you', 'thank you', 'thanks for watching', 'thank you for watching',
     'bye', 'okay', 'ok', 'so', 'uh', 'um', 'hmm', 'mm', 'oh']);
 
+// A word repeated more than this many times in a row is a Whisper loop, not
+// speech: "no, no, no" is kept, "la la la la la ..." is cut to three.
+const MAX_REPEATS = 3;
+
+function collapseRepeats(text) {
+    const words = text.split(' ');
+    const kept = [];
+    let run = 0;
+    words.forEach((word, index) => {
+        const bare = word.toLowerCase().replace(/[^a-z']/g, '');
+        const previous = index ? words[index - 1].toLowerCase().replace(/[^a-z']/g, '') : null;
+        run = bare && bare === previous ? run + 1 : 1;
+        if (run <= MAX_REPEATS) kept.push(word);
+    });
+    return kept.join(' ');
+}
+
 export function cleanTranscript(text) {
-    const cleaned = String(text || '')
+    const cleaned = collapseRepeats(String(text || '')
         .replace(/\[[^\]]*\]|\([^)]*\)|\*[^*]*\*|♪+/g, ' ')
         .replace(/\s+/g, ' ')
-        .trim();
-    const bare = cleaned.toLowerCase().replace(/[^a-z' ]/g, '').trim();
-    return !bare || HALLUCINATIONS.has(bare) ? '' : cleaned;
+        .trim());
+    const bare = cleaned.toLowerCase().replace(/[^a-z' ]/g, '').replace(/\s+/g, ' ').trim();
+    // Also "you you you": a hallucination repeated is still a hallucination.
+    const distinct = [...new Set(bare.split(' '))].join(' ');
+    return !bare || HALLUCINATIONS.has(bare) || HALLUCINATIONS.has(distinct) ? '' : cleaned;
 }
 
 // Short scrolling commands and reactions that the sentiment model or a tiny

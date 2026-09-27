@@ -1,8 +1,14 @@
-// Capture mono PCM away from the UI thread. Never play the microphone back.
-class AutoScrollMicrophone extends AudioWorkletProcessor {
-    constructor(options) {
-        super();
-        const config = options.processorOptions;
+// Frames mono PCM into YAMNet windows, level readings, and speech phrases.
+// Used two ways:
+//  - as an AudioWorklet (AutoScrollMicrophone, registered below);
+//  - as a content script in YouTube tabs, where it defines AutoScrollFramer for
+//    extension-interaction.js. A cross-origin frame cannot start audio without a
+//    click inside it, so the page captures the microphone and frames it here.
+// Never plays the microphone back.
+class AutoScrollFramer {
+    // post(message, transfer) receives each packet.
+    constructor(config, post) {
+        this.post = post;
         this.buffer = new Float32Array(config.windowSamples);
         this.offset = 0;
         this.hopSamples = Math.max(1, Math.min(this.buffer.length, config.hopSamples || this.buffer.length));
@@ -40,7 +46,7 @@ class AutoScrollMicrophone extends AudioWorkletProcessor {
         this.meterCount++;
         this.meterHadInput ||= hasInput;
         if (this.meterCount >= this.meterSamples) {
-            this.port.postMessage({ type: 'level', rms: Math.sqrt(this.meterEnergy / this.meterCount),
+            this.post({ type: 'level', rms: Math.sqrt(this.meterEnergy / this.meterCount),
                 hasInput: this.meterHadInput, endSample: this.totalSamples });
             this.meterCount = 0;
             this.meterEnergy = 0;
@@ -69,7 +75,7 @@ class AutoScrollMicrophone extends AudioWorkletProcessor {
         this.phraseActiveSamples = 0;
         this.phraseSilentSamples = 0;
         this.phraseStartSample = frameStart - count;
-        this.port.postMessage({ type: 'phrase-start', utteranceId: this.utteranceId, startSample: this.phraseStartSample });
+        this.post({ type: 'phrase-start', utteranceId: this.utteranceId, startSample: this.phraseStartSample });
     }
 
     finishChunk(finalized, nextSample) {
@@ -80,7 +86,7 @@ class AutoScrollMicrophone extends AudioWorkletProcessor {
         const length = Math.max(0, endSample - this.phraseStartSample);
         if (this.phraseActiveSamples >= this.phraseMin && length) {
             const samples = this.phraseBuffer.slice(0, length);
-            this.port.postMessage({ type: 'phrase', samples, utteranceId: this.utteranceId,
+            this.post({ type: 'phrase', samples, utteranceId: this.utteranceId,
                 startSample: this.phraseStartSample, endSample,
                 activeSamples: this.phraseActiveSamples, finalized }, [samples.buffer]);
         }
@@ -124,11 +130,8 @@ class AutoScrollMicrophone extends AudioWorkletProcessor {
         this.phraseFrameEnergy = 0;
     }
 
-    process(inputs, outputs) {
-        for (const output of outputs) for (const channel of output) channel.fill(0);
-        const channels = inputs[0];
-        const hasInput = Boolean(channels?.length && channels[0].length);
-        const count = hasInput ? channels[0].length : outputs[0]?.[0]?.length || 128;
+    // channels: arrays of samples (averaged to mono); count: samples to consume.
+    push(channels, count, hasInput) {
         // Missing input advances the same clock and silence endpoint as real
         // zero samples. No partial phrase can survive a disconnected input.
         for (let i = 0; i < count; i++) {
@@ -151,13 +154,32 @@ class AutoScrollMicrophone extends AudioWorkletProcessor {
                 const length = this.buffer.length;
                 const next = new Float32Array(length);
                 next.set(this.buffer.subarray(this.hopSamples));
-                this.port.postMessage({ type: 'window', samples: this.buffer,
+                this.post({ type: 'window', samples: this.buffer,
                     startSample: this.totalSamples - length, endSample: this.totalSamples }, [this.buffer.buffer]);
                 this.buffer = next;
                 this.offset = length - this.hopSamples;
             }
         }
-        return true;
     }
 }
-registerProcessor('autoscroll-microphone', AutoScrollMicrophone);
+
+if (typeof AudioWorkletProcessor === 'function') {
+    // Capture mono PCM away from the UI thread; output silence.
+    class AutoScrollMicrophone extends AudioWorkletProcessor {
+        constructor(options) {
+            super();
+            this.framer = new AutoScrollFramer(options.processorOptions, (message, transfer) => this.port.postMessage(message, transfer));
+        }
+
+        process(inputs, outputs) {
+            for (const output of outputs) for (const channel of output) channel.fill(0);
+            const channels = inputs[0];
+            const hasInput = Boolean(channels?.length && channels[0].length);
+            this.framer.push(channels, hasInput ? channels[0].length : outputs[0]?.[0]?.length || 128, hasInput);
+            return true;
+        }
+    }
+    registerProcessor('autoscroll-microphone', AutoScrollMicrophone);
+} else {
+    globalThis.AutoScrollFramer = AutoScrollFramer;
+}

@@ -1,3 +1,7 @@
+import { FACE_PREP, LOOK_AWAY_TURN, headTurn as measureTurn, squareCrop, toModelInput } from "./face-preprocess.js";
+
+export { LOOK_AWAY_TURN };
+
 const video = document.getElementById("camera");
 const overlay = document.getElementById("overlay");
 const ctx = overlay.getContext("2d");
@@ -6,27 +10,96 @@ const frame = document.createElement("canvas");
 const frameCtx = frame.getContext("2d");
 
 const crop = document.createElement("canvas");
-crop.width = crop.height = 64;
+crop.width = crop.height = FACE_PREP.size;
 const cropCtx = crop.getContext("2d", { willReadFrequently: true });
 
+// Output order of the expression model (EmotiEffLib enet_b0_8_va_mtl), which
+// replaced FER+: on real expression videos it caught about 50% more real
+// reactions at the same zero false scrolls (see models/SOURCES.json).
 const labels = [
-  "neutral", "happiness", "surprise", "sadness",
-  "anger", "disgust", "fear", "contempt"
+  "anger", "contempt", "disgust", "fear",
+  "happiness", "neutral", "sadness", "surprise"
 ];
 
 const assetURL = path => new URL(path, import.meta.url).href;
 
 let stream;
-let stopped = false;
+let stopped = true;
 let stage = "Starting camera";
 let latestScores = null;
+let lastError = null;
+// wanted: startCamera() was called and stopCamera() was not.
+// running: the current start() loop, until it has released its models.
+let wanted = false;
+let running = null;
+// External mode: frames arrive from elsewhere (see pushFrame) instead of this
+// page's own camera. Used by the hidden engine frame on YouTube, because Safari
+// mutes one capture when another site in the same tab starts capturing.
+let external = false;
+let externalFrame = null;
+let externalFrameId = 0;
+let wakeForFrame = null;
+
+// Supplies the next camera frame (an ImageBitmap) in external mode.
+export function pushFrame(bitmap) {
+  if (!external || stopped) {
+    bitmap.close?.();
+    return;
+  }
+  externalFrame?.close?.();
+  externalFrame = bitmap;
+  externalFrameId++;
+  // Frame arrival drives the loop, so a throttled timer in a hidden frame
+  // does not slow face detection.
+  wakeForFrame?.();
+}
 
 export function getScores() {
   return latestScores;
 }
 
+// Last camera or model error message, or null.
+export function getCameraError() {
+  return lastError;
+}
+
+let modelsReady = false;
+
+// For the status popup: whether the face models are loaded, and frames received.
+export function getCameraState() {
+  return { modelsReady, frames: externalFrameId };
+}
+
+// Face presence. A reading older than FACE_LOST_MS is dropped, so a stale
+// expression cannot keep deciding after you look away or leave.
+const FACE_LOST_MS = 1000;
+let lastFaceAt = 0;
+let lastFrameAt = 0;
+let lastTurn = null;
+
+// A face turned past LOOK_AWAY_TURN (see face-preprocess.js) counts as looking
+// away: it is not scored (side views read as disgust or contempt) and counts as
+// no face.
+function headTurn(detection) {
+  return measureTurn(detection.keypoints, frame.width, frame.height);
+}
+
+// { known, absentMs, lookingAway, turn }. known is false without a working
+// camera. absentMs: time since a face looking at the camera was last seen.
+export function getFacePresence() {
+  const now = Date.now();
+  const known = modelsReady && now - lastFrameAt <= 2000;
+  return {
+    known,
+    absentMs: known ? now - lastFaceAt : 0,
+    lookingAway: known && lastTurn !== null && lastTurn > LOOK_AWAY_TURN,
+    turn: known ? lastTurn : null
+  };
+}
+
 function showError(error) {
   console.error(stage, error);
+  lastError = `${stage}: ${error.message || error}`;
 
   const message = document.createElement("pre");
   message.textContent =
@@ -50,11 +123,32 @@ function showError(error) {
   document.body.appendChild(message);
 }
 
-function stopCamera() {
+export function stopCamera() {
+  wanted = false;
+  modelsReady = false;
+  lastFaceAt = lastFrameAt = 0;
+  lastTurn = null;
   stopped = true;
+  latestScores = null;
   stream?.getTracks().forEach(track => track.stop());
   video.srcObject = null;
+  externalFrame?.close?.();
+  externalFrame = null;
   ctx.clearRect(0, 0, overlay.width, overlay.height);
+}
+
+// Starts the camera and models; safe to call again. After a stop, waits for the
+// previous loop to release its models before starting a new one.
+// { external: true } reads frames from pushFrame() instead of opening the camera.
+export async function startCamera({ external: useExternal = false } = {}) {
+  if (wanted) return;
+  wanted = true;
+  external = useExternal;
+  await running;
+  if (!wanted) return;
+  stopped = false;
+  lastError = null;
+  running = start();
 }
 
 function getBox(detection) {
@@ -71,28 +165,34 @@ function getBox(detection) {
   return { x, y, width: right - x, height: bottom - y };
 }
 
+// The face, widened to a square with margin (see face-preprocess.js), as the
+// model's 224x224 normalized RGB input.
 function makeInput(ort, box) {
+  const size = FACE_PREP.size;
+  const area = squareCrop(box, frame.width, frame.height);
   cropCtx.drawImage(
     frame,
-    box.x, box.y, box.width, box.height,
-    0, 0, 64, 64
+    area.x, area.y, area.width, area.height,
+    0, 0, size, size
   );
 
-  const rgba = cropCtx.getImageData(0, 0, 64, 64).data;
-  const data = new Float32Array(4096);
+  const data = toModelInput(cropCtx.getImageData(0, 0, size, size).data, size);
+  return new ort.Tensor("float32", data, [1, 3, size, size]);
+}
 
-  for (let i = 0; i < data.length; i++) {
-    const p = i * 4;
-
-    // FER+ expects grayscale values 0–255, not 0–1.
-    data[i] = Math.round(
-      rgba[p] * 0.299 +
-      rgba[p + 1] * 0.587 +
-      rgba[p + 2] * 0.114
-    );
+// Probability of each expression, e.g. { neutral: 0.7, sadness: 0.12, ... }.
+export function emotionProbabilities(scores) {
+  if (
+    scores.length !== 8 ||
+    !Array.from(scores).every(Number.isFinite)
+  ) {
+    throw new Error("Expected eight expression scores.");
   }
 
-  return new ort.Tensor("float32", data, [1, 1, 64, 64]);
+  const max = Math.max(...scores);
+  const values = Array.from(scores, value => Math.exp(value - max));
+  const sum = values.reduce((a, b) => a + b, 0);
+  return Object.fromEntries(labels.map((label, index) => [label, values[index] / sum]));
 }
 
 export function classify(scores) {
@@ -100,7 +200,7 @@ export function classify(scores) {
     scores.length !== 8 ||
     !Array.from(scores).every(Number.isFinite)
   ) {
-    throw new Error("Expected eight FER+ scores.");
+    throw new Error("Expected eight expression scores.");
   }
 
   const max = Math.max(...scores);
@@ -142,27 +242,29 @@ async function start() {
   let session;
 
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: "user",
-        width: { ideal: 640 },
-        height: { ideal: 480 }
-      },
-      audio: false
-    });
+    if (!external) {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 }
+        },
+        audio: false
+      });
 
-    if (stopped) {
-      stream.getTracks().forEach(track => track.stop());
-      return;
+      if (stopped) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+
+      stream.getVideoTracks()[0].addEventListener(
+        "ended", stopCamera, { once: true }
+      );
+
+      video.srcObject = stream;
+      await video.play();
+      if (stopped) return;
     }
-
-    stream.getVideoTracks()[0].addEventListener(
-      "ended", stopCamera, { once: true }
-    );
-
-    video.srcObject = stream;
-    await video.play();
-    if (stopped) return;
 
     stage = "Loading MediaPipe JavaScript";
     console.log(stage);
@@ -201,9 +303,9 @@ async function start() {
     });
     if (stopped) return;
 
-    stage = "Loading FER+ model and ONNX WASM";
+    stage = "Loading expression model and ONNX WASM";
     session = await ort.InferenceSession.create(
-      assetURL("models/emotion-ferplus-8.onnx"),
+      assetURL("models/enet_b0_8_va_mtl.onnx"),
       { executionProviders: ["wasm"] }
     );
     if (stopped) return;
@@ -212,43 +314,51 @@ async function start() {
       session.inputNames.length !== 1 ||
       session.outputNames.length !== 1
     ) {
-      throw new Error("Use the emotion-ferplus-8.onnx model.");
+      throw new Error("Use the enet_b0_8_va_mtl.onnx model.");
     }
 
     console.log("Both models ready");
+    modelsReady = true;
     let lastTime = -1;
 
     while (!stopped) {
       const started = performance.now();
 
-      if (
-        !document.hidden &&
-        video.readyState >= 2 &&
-        video.currentTime !== lastTime
-      ) {
-        lastTime = video.currentTime;
+      // Keep reading faces when the AutoScroll window is covered by the reels
+      // window (macOS then reports it as hidden); only new frames are used.
+      const source = external ? externalFrame : video;
+      const hasFrame = external ? Boolean(source) : video.readyState >= 2;
+      const time = external ? externalFrameId : video.currentTime;
 
-        if (
-          frame.width !== video.videoWidth ||
-          frame.height !== video.videoHeight
-        ) {
-          frame.width = overlay.width = video.videoWidth;
-          frame.height = overlay.height = video.videoHeight;
+      if (hasFrame && time !== lastTime) {
+        lastTime = time;
+        const width = external ? source.width : video.videoWidth;
+        const height = external ? source.height : video.videoHeight;
+
+        if (frame.width !== width || frame.height !== height) {
+          frame.width = overlay.width = width;
+          frame.height = overlay.height = height;
         }
 
-        frameCtx.drawImage(video, 0, 0, frame.width, frame.height);
+        frameCtx.drawImage(source, 0, 0, frame.width, frame.height);
 
         stage = "Detecting face";
-        const boxes = detector.detectForVideo(frame, started)
+        const faces = detector.detectForVideo(frame, started)
           .detections
-          .map(getBox)
-          .filter(Boolean)
-          .sort((a, b) => b.width * b.height - a.width * a.height);
+          .map(detection => ({ box: getBox(detection), turn: headTurn(detection) }))
+          .filter(face => face.box)
+          .sort((a, b) => b.box.width * b.box.height - a.box.width * a.box.height);
 
-        const box = boxes[0];
+        const box = faces[0]?.turn <= LOOK_AWAY_TURN ? faces[0].box : null;
+
+        lastFrameAt = Date.now();
+        lastTurn = faces[0] ? faces[0].turn : null;
 
         if (!box) {
+          // No face, or a face turned away.
           ctx.clearRect(0, 0, overlay.width, overlay.height);
+          // Brief misses keep the last reading; a longer absence drops it.
+          if (Date.now() - lastFaceAt > FACE_LOST_MS) latestScores = null;
         } else {
           stage = "Classifying expression";
           const input = makeInput(ort, box);
@@ -261,9 +371,11 @@ async function start() {
 
             if (stopped) break;
 
-            const scores = outputs[session.outputNames[0]].data;
+            // 8 expression scores, then valence and arousal (unused).
+            const scores = Array.from(outputs[session.outputNames[0]].data).slice(0, 8);
 
-            latestScores = Array.from(scores);
+            latestScores = scores;
+            lastFaceAt = Date.now();
 
             const result = classify(scores);
             draw(box, result);
@@ -277,7 +389,20 @@ async function start() {
       }
 
       await new Promise(resolve => {
-        setTimeout(resolve, Math.max(0, 100 - (performance.now() - started)));
+        const delay = Math.max(0, 100 - (performance.now() - started));
+        if (external) {
+          // Wake on the next frame, or after 1 s at most. The timer belongs to
+          // this wait only, so it cannot cut a later wait short.
+          const wake = () => {
+            if (wakeForFrame === wake) wakeForFrame = null;
+            clearTimeout(timer);
+            resolve();
+          };
+          const timer = setTimeout(wake, Math.max(delay, 1000));
+          wakeForFrame = wake;
+        } else {
+          setTimeout(resolve, delay);
+        }
       });
     }
   } catch (error) {
@@ -303,4 +428,3 @@ async function start() {
 }
 
 window.addEventListener("pagehide", stopCamera);
-start();

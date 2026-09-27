@@ -1,0 +1,19 @@
+/* Hidden engine frame: nothing is shown. */
+html, body {
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+/* Rendered (so camera frames keep arriving) but invisible. */
+video, canvas {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+/* The camera module's error box; errors are reported to the popup instead. */
+body > pre {
+  display: none;
+}

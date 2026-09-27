@@ -842,3 +842,43 @@ test('listen() gives null on timeout, abort, or stop, and rejects before start',
     assert.equal(await stopped, null);
     assert.deepEqual(env.signals, []);
 });
+
+test('an external microphone input (the YouTube page) replaces capture in a hidden frame', async () => {
+    const env = await setup();
+    let onPacket;
+    let closed = 0;
+    const input = {
+        sampleRate: 48000, label: 'Page microphone',
+        open(options, packet) { assert.equal(options.windowSamples, 46800); onPacket = packet; },
+        close() { closed++; }
+    };
+    assert.equal(await env.detector.start({ input }), true);
+    assert.equal(env.mediaRequests.length, 0, 'the frame never asks for the microphone itself');
+    assert.equal(env.contexts.length, 0, 'and never starts audio itself');
+    for (let i = 0; i < 2; i++) {
+        const startSample = env.windowEnd;
+        env.windowEnd += 46800;
+        onPacket({ type: 'window', samples: new Float32Array(46800).fill(0.1), startSample, endSample: env.windowEnd });
+        await settle();
+    }
+    assert.equal(env.detector.getSignal(), 'positive');
+    assert.equal(env.diagnostics.at(-1).microphone, 'Page microphone');
+    await env.detector.stop();
+    assert.equal(closed, 1);
+});
+
+test('a phrase is too old by its capture time, even if it just arrived', async () => {
+    const pending = deferred();
+    const speech = speechAdapter(() => pending.promise);
+    const env = await setup({ loadClassifier: async () => speechClassifier(), loadSpeechClassifier: async () => speech });
+    await env.detector.start();
+    await env.beginPhrase(1);
+    await env.emit(loudWindow());
+    const startSample = env.phraseStarts.get(1);
+    await env.emit({ type: 'phrase', utteranceId: 1, startSample, endSample: env.windowEnd, capturedAt: env.now - 5001,
+        samples: new Float32Array(env.windowEnd - startSample).fill(0.1), finalized: 'silence' });
+    pending.resolve(words('negative'));
+    await settle();
+    assert.equal(env.detector.getSignal(), 'neutral', 'said over 5 s ago: not acted on');
+    await env.detector.stop();
+});

@@ -4,12 +4,40 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>AutoScroll</title>
+  <link rel="stylesheet" href="popup.css">
   <script src="popup.js" defer></script>
 </head>
 <body>
-  <strong>AutoScroll</strong>
-  <p><button id="open-camera" type="button">Open camera test</button></p>
-  <p><button id="test-audio" type="button">Test microphone</button></p>
-  <p id="error" role="alert"></p>
+  <label class="switch">
+    <span>AutoScroll</span>
+    <input id="enabled" type="checkbox" role="switch">
+  </label>
+  <p id="summary">Works on YouTube Shorts.</p>
+  <label class="setting">
+    <span>Face sensitivity</span>
+    <select id="face-sensitivity">
+      <option value="low">Low</option>
+      <option value="medium">Medium</option>
+      <option value="high">High</option>
+    </select>
+  </label>
+  <label class="setting">
+    <span>Scroll when a Short ends</span>
+    <input id="scroll-at-end" type="checkbox" checked>
+  </label>
+  <label class="setting">
+    <span>Pause when you look away</span>
+    <input id="pause-when-away" type="checkbox" checked>
+  </label>
+  <dl id="status" hidden>
+    <dt>Engine</dt><dd id="frame"></dd>
+    <dt>Link</dt><dd id="link"></dd>
+    <dt>Microphone</dt><dd id="microphone"></dd>
+    <dt>Camera</dt><dd id="camera"></dd>
+    <dt>Face</dt><dd id="face"></dd>
+    <dt>Speech</dt><dd id="speech"></dd>
+    <dt>Heard</dt><dd id="heard"></dd>
+    <dt>Scroll</dt><dd id="scroll"></dd>
+  </dl>
 </body>
 </html>

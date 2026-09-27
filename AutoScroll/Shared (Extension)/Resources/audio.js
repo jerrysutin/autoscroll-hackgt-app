@@ -29,7 +29,9 @@ const HOLD_MS = 3000;
 // A sound reaction must appear in consecutive YAMNet windows (240 ms apart).
 const CONFIRM_WINDOWS = 2;
 // Phrase results older than this (e.g. after a long busy queue) are dropped.
-const MAX_PHRASE_AGE_MS = 8000;
+// Measured from capture (packet.capturedAt, set by the page) when available, so a
+// phrase delayed in a busy engine is not acted on seconds after it was said.
+const MAX_PHRASE_AGE_MS = 5000;
 // Official YAMNet AudioSet class indices; baby sounds and sighs are excluded.
 const POSITIVE_CLASSES = [13, 15, 16, 17, 18]; // laughter, giggle, snicker, belly laugh, chuckle
 // Speech, conversation, narration, shouting, yelling, and whispering.
@@ -374,7 +376,11 @@ export function createAudioDetector({ onSignal = () => {}, onLabel = () => {}, o
             if (!active(session)) return;
             const result = await session.speechClassifier.classify(waveform);
             if (!['positive', 'negative', 'neutral'].includes(result?.signal)) throw new Error('Invalid speech signal.');
-            if (!active(session) || Date.now() - packet.receivedAt > MAX_PHRASE_AGE_MS) return;
+            if (!active(session)) return;
+            if (Date.now() - packet.receivedAt > MAX_PHRASE_AGE_MS) {
+                onSpeech({ status: 'late', ...result, duration: waveform.length / SAMPLE_RATE });
+                return;
+            }
             onSpeech({ status: 'result', ...result, duration: waveform.length / SAMPLE_RATE });
             react(session, result.signal, 'words', { transcript: result.transcript });
             report(session);
@@ -434,16 +440,22 @@ export function createAudioDetector({ onSignal = () => {}, onLabel = () => {}, o
         }
     }
 
-    function start({ deviceId = '', processing = true } = {}) {
+    // input (optional): an external microphone, for pages that cannot start audio
+    // themselves, like a hidden cross-origin frame (see engine.js). Shape:
+    // { sampleRate, label, open(processorOptions, onPacket, onError), close() };
+    // it delivers the same packets as audio-worklet.js.
+    function start({ deviceId = '', processing = true, input = null } = {}) {
         if (current) return current.ready;
-        if (!navigator.mediaDevices?.getUserMedia || !globalThis.AudioContext || !globalThis.AudioWorkletNode) {
+        if (!input && (!navigator.mediaDevices?.getUserMedia || !globalThis.AudioContext || !globalThis.AudioWorkletNode)) {
             const error = new Error('Microphone capture needs a supported secure browser page. See the localhost test instructions in README.md.');
             setState('error');
             onError(error);
             return Promise.reject(error);
         }
         // Create/resume immediately so the browser sees the Start click's user activation.
-        const context = new AudioContext();
+        const context = input
+            ? { sampleRate: input.sampleRate, state: 'running', close() { this.state = 'closed'; return Promise.resolve(); } }
+            : new AudioContext();
         const session = { context, busy: false, speechBusy: false, history: [], audioEnd: 0, event: null, streak: null, soundSignal: 'neutral' };
         current = session;
         setLabel('neutral');
@@ -453,8 +465,8 @@ export function createAudioDetector({ onSignal = () => {}, onLabel = () => {}, o
         session.ready = (async () => {
             try {
                 await Promise.all([
-                    context.resume(),
-                    navigator.mediaDevices.getUserMedia({
+                    input ? null : context.resume(),
+                    input ? null : navigator.mediaDevices.getUserMedia({
                         video: false,
                         audio: {
                             channelCount: { ideal: 1 },
@@ -473,26 +485,34 @@ export function createAudioDetector({ onSignal = () => {}, onLabel = () => {}, o
                         if (!active(session)) { classifier.dispose(); return; }
                         session.classifier = classifier;
                     }),
-                    context.audioWorklet.addModule(new URL('./audio-worklet.js', import.meta.url).href)
+                    input ? null : context.audioWorklet.addModule(new URL('./audio-worklet.js', import.meta.url).href)
                 ]);
                 if (!active(session)) return false;
-                session.source = context.createMediaStreamSource(session.stream);
-                session.worklet = new AudioWorkletNode(context, 'autoscroll-microphone', {
-                    channelCount: 1,
-                    channelCountMode: 'explicit',
-                    processorOptions: {
-                        windowSamples: Math.round(context.sampleRate * WINDOW_SECONDS),
-                        hopSamples: Math.round(context.sampleRate * HOP_SECONDS),
-                        meterSamples: Math.round(context.sampleRate / 10),
-                        // Phrases: short words like "next" count; a 0.15 s pause ends a
-                        // phrase; long speech is analyzed at least every 4 s.
-                        phraseFrameSamples: loadSpeechClassifier ? Math.round(context.sampleRate * 0.02) : 0,
-                        phraseMinSamples: Math.round(context.sampleRate * 0.25),
-                        phraseMaxSamples: Math.round(context.sampleRate * 4),
-                        phraseSilenceSamples: Math.round(context.sampleRate * 0.15),
-                        phrasePreRollSamples: Math.round(context.sampleRate * 0.2)
-                    }
-                });
+                const processorOptions = {
+                    windowSamples: Math.round(context.sampleRate * WINDOW_SECONDS),
+                    hopSamples: Math.round(context.sampleRate * HOP_SECONDS),
+                    meterSamples: Math.round(context.sampleRate / 10),
+                    // Phrases: short words like "next" count; a 0.15 s pause ends a
+                    // phrase; long speech is analyzed at least every 4 s.
+                    phraseFrameSamples: loadSpeechClassifier ? Math.round(context.sampleRate * 0.02) : 0,
+                    phraseMinSamples: Math.round(context.sampleRate * 0.25),
+                    phraseMaxSamples: Math.round(context.sampleRate * 4),
+                    phraseSilenceSamples: Math.round(context.sampleRate * 0.15),
+                    phrasePreRollSamples: Math.round(context.sampleRate * 0.2)
+                };
+                if (input) {
+                    const track = { label: input.label || 'Microphone', getSettings: () => ({}) };
+                    session.stream = { getTracks: () => [], getAudioTracks: () => [track] };
+                    session.source = { disconnect() {} };
+                    session.worklet = { port: { onmessage: null, close: () => input.close() }, disconnect() {} };
+                } else {
+                    session.source = context.createMediaStreamSource(session.stream);
+                    session.worklet = new AudioWorkletNode(context, 'autoscroll-microphone', {
+                        channelCount: 1,
+                        channelCountMode: 'explicit',
+                        processorOptions
+                    });
+                }
                 session.worklet.port.onmessage = event => {
                     if (!active(session)) return;
                     const packet = event.data;
@@ -503,7 +523,7 @@ export function createAudioDetector({ onSignal = () => {}, onLabel = () => {}, o
                     }
                     if (packet.type === 'phrase') {
                         // Keep only the newest phrase waiting; never build a backlog.
-                        session.pendingPhrase = { ...packet, receivedAt: Date.now() };
+                        session.pendingPhrase = { ...packet, receivedAt: packet.capturedAt ?? Date.now() };
                         tryPhrase(session);
                         return;
                     }
@@ -523,13 +543,17 @@ export function createAudioDetector({ onSignal = () => {}, onLabel = () => {}, o
                     session.busy = true;
                     session.inference = processWindow(session, packet);
                 };
-                session.worklet.onprocessorerror = () => fail(session, new Error('Microphone audio processing stopped. Please restart.'));
-                session.source.connect(session.worklet);
-                // Worklet outputs silence, so this keeps capture alive without mic feedback.
-                session.worklet.connect(context.destination);
-                context.onstatechange = () => {
-                    if (active(session) && context.state !== 'running') fail(session, new Error('Safari paused the microphone. Press Start to resume.'));
-                };
+                if (input) {
+                    input.open(processorOptions, data => session.worklet.port.onmessage?.({ data }), error => fail(session, error));
+                } else {
+                    session.worklet.onprocessorerror = () => fail(session, new Error('Microphone audio processing stopped. Please restart.'));
+                    session.source.connect(session.worklet);
+                    // Worklet outputs silence, so this keeps capture alive without mic feedback.
+                    session.worklet.connect(context.destination);
+                    context.onstatechange = () => {
+                        if (active(session) && context.state !== 'running') fail(session, new Error('Safari paused the microphone. Press Start to resume.'));
+                    };
+                }
                 setState('listening');
                 if (loadSpeechClassifier) {
                     session.speechAbort = new AbortController();
