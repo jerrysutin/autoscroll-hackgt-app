@@ -1,3 +1,7 @@
+import { FACE_PREP, LOOK_AWAY_TURN, headTurn as measureTurn, squareCrop, toModelInput } from "./face-preprocess.js";
+
+export { LOOK_AWAY_TURN };
+
 const video = document.getElementById("camera");
 const overlay = document.getElementById("overlay");
 const ctx = overlay.getContext("2d");
@@ -6,12 +10,15 @@ const frame = document.createElement("canvas");
 const frameCtx = frame.getContext("2d");
 
 const crop = document.createElement("canvas");
-crop.width = crop.height = 64;
+crop.width = crop.height = FACE_PREP.size;
 const cropCtx = crop.getContext("2d", { willReadFrequently: true });
 
+// Output order of the expression model (EmotiEffLib enet_b0_8_va_mtl), which
+// replaced FER+: on real expression videos it caught about 50% more real
+// reactions at the same zero false scrolls (see models/SOURCES.json).
 const labels = [
-  "neutral", "happiness", "surprise", "sadness",
-  "anger", "disgust", "fear", "contempt"
+  "anger", "contempt", "disgust", "fear",
+  "happiness", "neutral", "sadness", "surprise"
 ];
 
 const assetURL = path => new URL(path, import.meta.url).href;
@@ -70,20 +77,11 @@ let lastFaceAt = 0;
 let lastFrameAt = 0;
 let lastTurn = null;
 
-// Head turn from BlazeFace keypoints (0 right eye, 1 left eye, 2 nose tip): the
-// nose's sideways offset from the midpoint between the eyes, relative to the
-// distance between them. About 0 facing the camera; it grows as the head turns.
-// A face turned past LOOK_AWAY_TURN counts as looking away: it is not scored
-// (side views read as disgust or contempt) and counts as no face.
-export const LOOK_AWAY_TURN = 0.35;
-
+// A face turned past LOOK_AWAY_TURN (see face-preprocess.js) counts as looking
+// away: it is not scored (side views read as disgust or contempt) and counts as
+// no face.
 function headTurn(detection) {
-  const [eyeA, eyeB, nose] = detection.keypoints || [];
-  if (!eyeA || !eyeB || !nose) return 0;
-  const ax = eyeA.x * frame.width;
-  const bx = eyeB.x * frame.width;
-  const eyes = Math.hypot(bx - ax, (eyeB.y - eyeA.y) * frame.height);
-  return eyes ? Math.abs(nose.x * frame.width - (ax + bx) / 2) / eyes : 0;
+  return measureTurn(detection.keypoints, frame.width, frame.height);
 }
 
 // { known, absentMs, lookingAway, turn }. known is false without a working
@@ -167,28 +165,19 @@ function getBox(detection) {
   return { x, y, width: right - x, height: bottom - y };
 }
 
+// The face, widened to a square with margin (see face-preprocess.js), as the
+// model's 224x224 normalized RGB input.
 function makeInput(ort, box) {
+  const size = FACE_PREP.size;
+  const area = squareCrop(box, frame.width, frame.height);
   cropCtx.drawImage(
     frame,
-    box.x, box.y, box.width, box.height,
-    0, 0, 64, 64
+    area.x, area.y, area.width, area.height,
+    0, 0, size, size
   );
 
-  const rgba = cropCtx.getImageData(0, 0, 64, 64).data;
-  const data = new Float32Array(4096);
-
-  for (let i = 0; i < data.length; i++) {
-    const p = i * 4;
-
-    // FER+ expects grayscale values 0–255, not 0–1.
-    data[i] = Math.round(
-      rgba[p] * 0.299 +
-      rgba[p + 1] * 0.587 +
-      rgba[p + 2] * 0.114
-    );
-  }
-
-  return new ort.Tensor("float32", data, [1, 1, 64, 64]);
+  const data = toModelInput(cropCtx.getImageData(0, 0, size, size).data, size);
+  return new ort.Tensor("float32", data, [1, 3, size, size]);
 }
 
 // Probability of each expression, e.g. { neutral: 0.7, sadness: 0.12, ... }.
@@ -197,7 +186,7 @@ export function emotionProbabilities(scores) {
     scores.length !== 8 ||
     !Array.from(scores).every(Number.isFinite)
   ) {
-    throw new Error("Expected eight FER+ scores.");
+    throw new Error("Expected eight expression scores.");
   }
 
   const max = Math.max(...scores);
@@ -211,7 +200,7 @@ export function classify(scores) {
     scores.length !== 8 ||
     !Array.from(scores).every(Number.isFinite)
   ) {
-    throw new Error("Expected eight FER+ scores.");
+    throw new Error("Expected eight expression scores.");
   }
 
   const max = Math.max(...scores);
@@ -314,9 +303,9 @@ async function start() {
     });
     if (stopped) return;
 
-    stage = "Loading FER+ model and ONNX WASM";
+    stage = "Loading expression model and ONNX WASM";
     session = await ort.InferenceSession.create(
-      assetURL("models/emotion-ferplus-8.onnx"),
+      assetURL("models/enet_b0_8_va_mtl.onnx"),
       { executionProviders: ["wasm"] }
     );
     if (stopped) return;
@@ -325,7 +314,7 @@ async function start() {
       session.inputNames.length !== 1 ||
       session.outputNames.length !== 1
     ) {
-      throw new Error("Use the emotion-ferplus-8.onnx model.");
+      throw new Error("Use the enet_b0_8_va_mtl.onnx model.");
     }
 
     console.log("Both models ready");
@@ -382,9 +371,10 @@ async function start() {
 
             if (stopped) break;
 
-            const scores = outputs[session.outputNames[0]].data;
+            // 8 expression scores, then valence and arousal (unused).
+            const scores = Array.from(outputs[session.outputNames[0]].data).slice(0, 8);
 
-            latestScores = Array.from(scores);
+            latestScores = scores;
             lastFaceAt = Date.now();
 
             const result = classify(scores);

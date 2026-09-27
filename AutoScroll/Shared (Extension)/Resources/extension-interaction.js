@@ -312,7 +312,9 @@
                 });
                 video.srcObject = stream;
                 (document.body || document.documentElement).append(video);
-                await video.play();
+                // A refused or interrupted start is retried with each frame (below)
+                // rather than giving up on the camera.
+                video.play().catch(error => console.warn('AutoScroll camera start:', error));
                 const canvas = document.createElement('canvas');
                 const context2d = canvas.getContext('2d', { willReadFrequently: true });
                 this.timer = setInterval(() => this.sendFrame(video, canvas, context2d), CAMERA_FRAME_MS);
@@ -331,6 +333,7 @@
         },
 
         async sendFrame(video, canvas, context2d) {
+            if (video.paused) video.play().catch(() => {});
             if (!engineReady || video.readyState < 2 || !video.videoWidth || this.sending) return;
             if (this.frameSentAt && Date.now() - this.frameSentAt < ACK_TIMEOUT_MS) return; // engine still busy
             this.sending = true;

@@ -50,25 +50,25 @@ test('without audio, a negative face scrolls once it lasts about half a second',
     assert.equal(decide(), false);
 });
 
-test('a mild frown scrolls at medium sensitivity (15%): negative emotions are added up', async () => {
+test('negative emotions are added up: a mixed frown scrolls at medium (45% before a baseline)', async () => {
     const { env, decide, setFaceSensitivity, getFaceInfo } = await setup();
     env.scores = [1];
-    // "neutral" is the top label, but 20% of the face reads as negative.
-    env.probabilities = { neutral: 0.75, sadness: 0.1, anger: 0.06, contempt: 0.04, happiness: 0.05 };
+    // "neutral" is the top label, but 50% of the face reads as negative.
+    env.probabilities = { neutral: 0.45, sadness: 0.2, anger: 0.18, contempt: 0.12, happiness: 0.05 };
     decide();
     env.now += 500;
     assert.equal(decide(), true);
-    assert.ok(Math.abs(getFaceInfo().negative - 0.2) < 1e-9);
-    assert.equal(getFaceInfo().threshold, 0.15);
+    assert.ok(Math.abs(getFaceInfo().negative - 0.5) < 1e-9);
+    assert.equal(getFaceInfo().threshold, 0.45);
 
     setFaceSensitivity('low');
     env.now += 500;
     decide();
     env.now += 500;
-    assert.equal(decide(), false, 'low (25%) needs a stronger reaction');
-    assert.equal(getFaceInfo().threshold, 0.25);
+    assert.equal(decide(), false, 'low (55%) needs a stronger reaction');
+    assert.equal(getFaceInfo().threshold, 0.55);
     setFaceSensitivity('high');
-    assert.equal(getFaceInfo().threshold, 0.1);
+    assert.equal(getFaceInfo().threshold, 0.4);
     setFaceSensitivity('nonsense');
     assert.equal(getFaceInfo().sensitivity, 'high', 'unknown values are ignored');
 });
@@ -160,4 +160,42 @@ test('remembers speech-model state and the last phrase heard, for the popup', as
     assert.equal(getSpeechInfo().heard.late, true);
     env.speech({ status: 'unavailable', message: 'assets missing' });
     assert.equal(getSpeechInfo().models, 'unavailable: assets missing');
+});
+
+test('learns your usual face and scrolls on a rise above it', async () => {
+    const { env, decide, getFaceInfo, setFaceSensitivity } = await setup();
+    env.scores = [1];
+    // A relaxed face that reads 42% negative: over the fixed 40% (high) at first...
+    env.probabilities = { neutral: 0.58, sadness: 0.42 };
+    setFaceSensitivity('high');
+    decide();
+    env.now += 500;
+    assert.equal(decide(), true, 'before a baseline, the fixed threshold applies');
+    // ...but once ~10 s of readings exist, 42% is simply this person's usual.
+    for (let i = 0; i < 20; i++) { env.now += 500; decide(); }
+    assert.ok(Math.abs(getFaceInfo().baseline - 0.42) < 1e-9);
+    assert.ok(Math.abs(getFaceInfo().threshold - 0.58) < 1e-9, 'usual 42% + 16% (high)');
+    env.now += 500;
+    assert.equal(decide(), false, 'their relaxed face no longer scrolls');
+    // A real reaction rises above it.
+    env.probabilities = { neutral: 0.1, anger: 0.9 };
+    env.now += 500;
+    decide();
+    env.now += 500;
+    assert.equal(decide(), true);
+    setFaceSensitivity('medium');
+    assert.ok(Math.abs(getFaceInfo().threshold - 0.62) < 1e-9, 'usual 42% + 20% (medium)');
+    setFaceSensitivity('low');
+    assert.ok(Math.abs(getFaceInfo().threshold - 0.67) < 1e-9, 'usual 42% + 25% (low)');
+});
+
+test('occasional reactions do not raise your usual level', async () => {
+    const { env, decide, getFaceInfo } = await setup();
+    env.scores = [1];
+    for (let i = 0; i < 40; i++) {
+        env.probabilities = i % 5 === 0 ? { anger: 0.6, neutral: 0.4 } : { neutral: 0.97, sadness: 0.03 };
+        env.now += 500;
+        decide();
+    }
+    assert.ok(Math.abs(getFaceInfo().baseline - 0.03) < 1e-9, 'the median ignores the frowns');
 });

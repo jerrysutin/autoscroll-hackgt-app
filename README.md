@@ -22,17 +22,29 @@ any service.
    your next click or key press on the page.
 4. **Decide.** Twice a second, `decide()` in `decision.js` turns your face
    expression and what you say (plus laughs and groans) into **scroll**, **watch**,
-   or no reading. A spoken or vocal reaction overrides the face for 3 s. For the
-   face, the probabilities of the negative expressions (sad, angry, disgusted,
-   fearful, contemptuous) are added up and averaged over 1.5 s; it scrolls when
-   that share reaches the **Face sensitivity** threshold chosen in the popup (Low
-   25%, Medium 15% (default), High 10%) and outweighs happy and surprised. The
-   popup's Face row shows the live share, e.g. "12% negative (scrolls at 15%)".
-   A face reading older than 1 s is dropped, so a stale expression never decides.
+   or no reading. A spoken or vocal reaction overrides the face for 3 s. The face
+   model is **EmotiEffLib enet_b0_8_va_mtl** (HSEmotion, Apache-2.0, 16 MB;
+   `models/SOURCES.json`): a 224×224 color crop of your face, widened 20%. The
+   probabilities of the negative expressions (anger, contempt, disgust, fear,
+   sadness) are added up and averaged over 1.5 s. After about 10 s it knows your
+   **usual** level (median of the last ~2 minutes) and scrolls when you rise above
+   it by the **Face sensitivity** margin: Low +25%, Medium +20% (default), High
+   +16%. Until then, fixed thresholds apply (55%, 45%, 40%). It must also
+   outweigh happy and surprised. The popup's Face row shows it live, e.g.
+   "42% negative (scrolls at 35%, your usual 15%)". A face reading older than
+   1 s is dropped.
+
+   Measured on real videos of two people (UniDataPro expression samples, used
+   locally only), with zero false scrolls on neutral faces: the previous FER+
+   model caught 15 reactions across the angry and sad clips, this model 22, at
+   the same speed (about 53 ms per face in WebKit). High (+16%) caught 26 but
+   scrolled once in ~17 s of one neutral clip. Facing the camera measured
+   0.03–0.16 head turn and side-camera views 0.30–0.51, hence the 0.25 look-away
+   cutoff.
 5. **Pause when away.** If the camera sees no face looking at it for 0.5 s (you
    left, or turned your head), the Short pauses with a small "Paused" notice, and
    resumes when you look back. A head turn is measured from the face detector's
-   eye and nose points (the nose's offset from between the eyes); past 35% the
+   eye and nose points (the nose's offset from between the eyes); past 25% the
    face counts as looking away and is not scored, because side views read as
    disgust or contempt and would otherwise scroll. The popup's Face row shows the
    live turn. Only a video AutoScroll paused is resumed; your own pause or play
@@ -154,7 +166,8 @@ so speech from the video is not mistaken for yours.
 - `extension-interaction.js`: in YouTube tabs. Adds the hidden engine frame on Shorts, captures the microphone and camera for it, scrolls on "scroll" (3-second cooldown) and when a Short ends, pauses while you are away, shows the pop-up.
 - `engine.html` / `engine.js` / `engine.css`: the hidden engine; takes the page's audio and camera frames, posts a decision twice a second.
 - `decision.js`: `decide()`; combines face and audio.
-- `facialExpressionClassifier.js`: face detection (BlazeFace) and expression (FER+), from its own camera or from frames passed to `pushFrame()`.
+- `facialExpressionClassifier.js`: face detection (BlazeFace) and expression (EmotiEffLib enet_b0), from its own camera or from frames passed to `pushFrame()`.
+- `face-preprocess.js`: face crop, model input, and head-turn measurement.
 - `audio-worklet.js`: frames mono PCM into YAMNet windows and phrases; runs as an AudioWorklet or, in YouTube tabs, as a content script (`AutoScrollFramer`).
 - `audio.js`: YAMNet, reaction events, and microphone lifecycle.
 - `speech.js`: picks GPU (page thread) or CPU (`speech-worker.js`) and queues phrases.

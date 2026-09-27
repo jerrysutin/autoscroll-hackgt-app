@@ -96,11 +96,12 @@ window.addEventListener("message", event => {
   }
 });
 
-// "· 12% negative (scrolls at 30%)", so the right sensitivity can be picked.
+// "· 4% negative (scrolls at 12%, your usual 2%)", so the right sensitivity can be picked.
 function describeFace(info) {
   if (!info) return "";
   const percent = value => `${Math.round(value * 100)}%`;
-  return ` · ${percent(info.negative)} negative (scrolls at ${percent(info.threshold)})`;
+  const usual = info.baseline == null ? "learning your usual" : `your usual ${percent(info.baseline)}`;
+  return ` · ${percent(info.negative)} negative (scrolls at ${percent(info.threshold)}, ${usual})`;
 }
 
 function report(status) {

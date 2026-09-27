@@ -27,10 +27,38 @@ const AUDIO_REACTION_MS = 3000;
 // exaggerated expression, because "neutral" usually wins.)
 const FACE_WINDOW_MS = 1500;
 const FACE_MIN_SAMPLES = 2;
-export const FACE_SENSITIVITY = { low: 0.25, medium: 0.15, high: 0.1 };
+// Until your usual level is known: fixed thresholds.
+export const FACE_SENSITIVITY = { low: 0.55, medium: 0.45, high: 0.4 };
+// Personal baseline. Relaxed faces read differently per person, camera, and
+// light, so after BASELINE_MIN_SAMPLES readings (~10 s) the threshold becomes
+// your usual level (median of the last BASELINE_MAX_SAMPLES, ~2 min, which
+// ignores occasional reactions) plus a margin. On real videos of two people
+// (with the enet_b0 model: neutral ~18%, mild spoken anger 26-47%, sadness
+// 30-67%), low and medium never scrolled on a neutral face; high (+16%, the
+// most sensitive) scrolled once in ~17 s of one neutral clip.
+export const FACE_MARGIN = { low: 0.25, medium: 0.2, high: 0.16 };
+const BASELINE_MIN_SAMPLES = 20;
+const BASELINE_MAX_SAMPLES = 240;
 let faceSensitivity = "medium";
 let faceHistory = [];
+let baselineSamples = [];
 let face = null;
+
+function median(values) {
+  const sorted = values.slice().sort((a, b) => a - b);
+  const middle = sorted.length >> 1;
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+// Your usual negative share, or null while still learning it.
+function baseline() {
+  return baselineSamples.length >= BASELINE_MIN_SAMPLES ? median(baselineSamples) : null;
+}
+
+function faceThreshold() {
+  const usual = baseline();
+  return usual === null ? FACE_SENSITIVITY[faceSensitivity] : usual + FACE_MARGIN[faceSensitivity];
+}
 
 export function setFaceSensitivity(value) {
   if (Object.hasOwn(FACE_SENSITIVITY, value)) {
@@ -38,9 +66,10 @@ export function setFaceSensitivity(value) {
   }
 }
 
-// For the status popup: the averaged negative share and the scroll threshold.
+// For the status popup: the averaged negative share, the scroll threshold, and
+// your usual level (null while learning).
 export function getFaceInfo() {
-  return face && { ...face, threshold: FACE_SENSITIVITY[faceSensitivity], sensitivity: faceSensitivity };
+  return face && { ...face, threshold: faceThreshold(), baseline: baseline(), sensitivity: faceSensitivity };
 }
 
 function share(probabilities, emotions) {
@@ -50,14 +79,17 @@ function share(probabilities, emotions) {
 function decideFromFace(scores) {
   const probabilities = emotionProbabilities(scores);
   const now = Date.now();
-  faceHistory.push({ at: now, negative: share(probabilities, negativeEmotions), positive: share(probabilities, positiveEmotions) });
+  const negative = share(probabilities, negativeEmotions);
+  faceHistory.push({ at: now, negative, positive: share(probabilities, positiveEmotions) });
+  baselineSamples.push(negative);
+  if (baselineSamples.length > BASELINE_MAX_SAMPLES) baselineSamples.shift();
   faceHistory = faceHistory.filter(sample => now - sample.at <= FACE_WINDOW_MS);
 
   const average = key => faceHistory.reduce((total, sample) => total + sample[key], 0) / faceHistory.length;
   face = { negative: average("negative"), positive: average("positive") };
 
   if (faceHistory.length >= FACE_MIN_SAMPLES &&
-      face.negative >= FACE_SENSITIVITY[faceSensitivity] && face.negative > face.positive) {
+      face.negative >= faceThreshold() && face.negative > face.positive) {
     // Start over, so one expression does not trigger again right after its scroll.
     faceHistory = [];
     return true; // scroll

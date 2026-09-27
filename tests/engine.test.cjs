@@ -181,11 +181,15 @@ test('ignores repeated audio formats once audio analysis has started', async () 
 test('applies the popup sensitivity from each tick and shows the live negative share', async () => {
     const { env } = await setup();
     env.scores = [1];
-    env.face = { negative: 0.123, positive: 0, threshold: 0.18, sensitivity: 'high' };
+    env.face = { negative: 0.123, positive: 0, threshold: 0.1, baseline: null, sensitivity: 'high' };
     env.now += 500;
     env.receive({ type: 'AUTOSCROLL_TICK', faceSensitivity: 'high' });
     assert.equal(env.sensitivity, 'high');
-    assert.equal(env.ofType('AUTOSCROLL_STATUS').at(-1).status.camera, 'sees your face · 12% negative (scrolls at 18%)');
+    assert.equal(env.ofType('AUTOSCROLL_STATUS').at(-1).status.camera, 'sees your face · 12% negative (scrolls at 10%, learning your usual)');
+    env.face = { negative: 0.03, positive: 0, threshold: 0.1, baseline: 0.02, sensitivity: 'high' };
+    env.now += 500;
+    env.receive({ type: 'AUTOSCROLL_TICK', faceSensitivity: 'high' });
+    assert.equal(env.ofType('AUTOSCROLL_STATUS').at(-1).status.camera, 'sees your face · 3% negative (scrolls at 10%, your usual 2%)');
 });
 
 test('reports face presence on every page tick, and shows looking away', async () => {
