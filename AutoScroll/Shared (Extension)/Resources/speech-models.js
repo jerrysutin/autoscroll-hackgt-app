@@ -25,6 +25,14 @@ function configure() {
     env.backends.onnx.wasm.proxy = false;
 }
 
+// On music, singing, or repeated sounds Whisper can loop ("la la la ...") until
+// its 448-token limit: hundreds of words and seconds of work, during which new
+// phrases wait and expire. A phrase this short cannot hold more than about
+// 8 tokens a second, and no 3-token run needs to repeat.
+function transcribeOptions(seconds) {
+  return { max_new_tokens: Math.min(48, Math.ceil(seconds * 8) + 6), no_repeat_ngram_size: 3 };
+}
+
 // backend: 'gpu' or 'cpu'. A GPU load that fails (including its warm-up) throws.
 export async function createSpeechModels(backend) {
     configure();
@@ -38,7 +46,7 @@ export async function createSpeechModels(backend) {
         backend,
         async analyze(samples) {
             const started = performance.now();
-            const { text } = await transcribe(samples);
+            const { text } = await transcribe(samples, transcribeOptions(samples.length / 16000));
             const transcribed = performance.now();
             let scores = null;
             if (describeStatement(text, { neutral: 1 }).reason !== 'no-words') {

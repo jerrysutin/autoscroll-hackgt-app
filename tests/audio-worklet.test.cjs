@@ -62,7 +62,7 @@ test('a short statement finalizes at a pause with pre-roll and trimmed trailing 
         type: 'phrase', utteranceId: 1, startSample: 2, endSample: 12, activeSamples: 6, finalized: 'silence',
         samples: [0, 0, 1, 1, 2, 2, 3, 3, 0, 0]
     });
-    assert.equal(env.processor.utteranceId, null);
+    assert.equal(env.processor.framer.utteranceId, null);
 });
 
 test('brief clicks and silence never produce a phrase packet', () => {
@@ -101,8 +101,8 @@ test('long continuous speech stays bounded and retains its utterance ID across m
         [1, 0, 9, 9, 'max'], [1, 9, 18, 9, 'max'], [1, 18, 26, 6, 'max']
     ]);
     assert.ok(packets.every(packet => packet.samples.length <= 9));
-    assert.equal(env.processor.phraseBuffer.length, 9);
-    assert.equal(env.processor.utteranceId, null);
+    assert.equal(env.processor.framer.phraseBuffer.length, 9);
+    assert.equal(env.processor.framer.utteranceId, null);
     env.feed([2, 2, 2, 2, 0, 0, 0, 0, 0, 0]);
     assert.equal(env.ofType('phrase-start').at(-1).utteranceId, 2);
 });

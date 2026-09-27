@@ -53,3 +53,14 @@ test('bundled speech assets match pinned hashes', () => {
         assert.equal(createHash('sha256').update(fs.readFileSync(path.join(assets, file))).digest('hex'), info.sha256, file);
     }
 });
+
+test('Whisper loops are cut: no word repeats more than three times in a row', async () => {
+    const { cleanTranscript, describeStatement } = await core;
+    // Real outputs from whisper-tiny.en on sung "la la la" and on "no no no ...".
+    assert.equal(cleanTranscript('La la la la la la la la la la la la la la la'), 'La la la');
+    assert.equal(cleanTranscript('No, no, no, no, no, no, no, no, no, no'), 'No, no, no,');
+    assert.equal(cleanTranscript('No, no, no.'), 'No, no, no.', 'real speech is kept');
+    assert.equal(cleanTranscript('This is so boring.'), 'This is so boring.');
+    assert.equal(describeStatement('you you you you you', { neutral: 1 }).reason, 'no-words', 'a repeated hallucination is still one');
+    assert.equal(describeStatement('Thank you. Thank you.', { neutral: 1 }).reason, 'no-words');
+});

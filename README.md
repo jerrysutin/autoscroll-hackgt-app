@@ -1,47 +1,64 @@
 # AutoScroll
 
-Safari extension for reaction-controlled Shorts and Reels navigation.
+Safari extension that scrolls YouTube Shorts for you, based on your reactions.
+Everything runs on your Mac: no video or audio is recorded, uploaded, or sent to
+any service.
+
+## How it works
+
+1. **On/off.** Click the AutoScroll icon in Safari's toolbar and use the switch. It
+   is on by default and the setting is remembered. The popup also shows live
+   status: camera, microphone, and the last decision.
+2. **Hidden engine.** On a YouTube Shorts page, `extension-interaction.js` adds an
+   invisible extension frame (`engine.html`) that runs the models. Leaving Shorts
+   or turning AutoScroll off removes it and stops the camera and microphone.
+3. **Camera and microphone.** The YouTube page captures both (Safari asks
+   youtube.com for the microphone, then the camera) and streams them into the
+   frame: framed audio from `audio-worklet.js`, and about 6 small camera frames a
+   second. Two Safari rules require this: a hidden frame from another site cannot
+   start audio without a click inside it, and when a second site in the same tab
+   starts capturing, Safari mutes the first. Denying the camera leaves the
+   microphone working (and the reverse). If Safari holds audio back, it starts on
+   your next click or key press on the page.
+4. **Decide.** Twice a second, `decide()` in `decision.js` turns your face
+   expression and what you say (plus laughs and groans) into **scroll**, **watch**,
+   or no reading. A spoken or vocal reaction overrides the face for 3 s. For the
+   face, the probabilities of the negative expressions (sad, angry, disgusted,
+   fearful, contemptuous) are added up and averaged over 1.5 s; it scrolls when
+   that share reaches the **Face sensitivity** threshold chosen in the popup (Low
+   25%, Medium 15% (default), High 10%) and outweighs happy and surprised. The
+   popup's Face row shows the live share, e.g. "12% negative (scrolls at 15%)".
+   A face reading older than 1 s is dropped, so a stale expression never decides.
+5. **Pause when away.** If the camera sees no face looking at it for 0.5 s (you
+   left, or turned your head), the Short pauses with a small "Paused" notice, and
+   resumes when you look back. A head turn is measured from the face detector's
+   eye and nose points (the nose's offset from between the eyes); past 35% the
+   face counts as looking away and is not scored, because side views read as
+   disgust or contempt and would otherwise scroll. The popup's Face row shows the
+   live turn. Only a video AutoScroll paused is resumed; your own pause or play
+   wins. It never pauses without a working camera. Switch it off in the popup.
+6. **Next Short at the end.** When a playing Short reaches its last ~0.35 s (or
+   loops back to its start), AutoScroll moves to the next one, once per
+   playthrough. A paused Short never advances. Uses the normal 3-second scroll
+   cooldown; switch it off in the popup ("Scroll when a Short ends").
+7. **Pop-up.** When it first sees your face or hears you, a small "AutoScroll is on"
+   notice appears in the top-right corner for a few seconds.
+8. **Scroll.** On "scroll", the page moves to the next Short, then waits at least
+   3 seconds before scrolling again.
+
+Frame and page messages carry a random token from the frame's URL. Instagram Reels
+are not supported: Instagram blocks the camera and microphone in embedded frames.
+Manual skip: Option + Shift + Down arrow. Note: allowing the camera and microphone for
+youtube.com also lets YouTube's own scripts use them without asking again; you can
+revoke them in Safari > Settings > Websites > Camera / Microphone.
 
 ## Audio reactions
 
-`AutoScroll/Shared (Extension)/Resources/audio.js` listens to the microphone and
-tells the future `decision.js` whether you reacted **positively** or **negatively**.
-Neutral is never sent: if you don't react, nothing is reported. Everything runs on
-your Mac. No audio is recorded, uploaded, or sent to any service.
-
-```js
-import { createAudioDetector } from './audio.js';
-
-const audio = createAudioDetector({ onError(error) { console.error(error.message); } });
-
-startButton.addEventListener('click', () => { audio.start().catch(console.error); });
-stopButton.addEventListener('click', () => { audio.stop(); });
-window.addEventListener('pagehide', () => { audio.stop(); });
-
-// In decision.js: ask for the next reaction, e.g. when a new video starts.
-const reaction = await audio.listen({ timeoutMs: 5000 });
-if (reaction === 'negative') { /* skip */ }
-if (reaction === 'positive') { /* keep watching */ }
-if (reaction === null) { /* no reaction within 5 s: nothing was sent */ }
-```
-
-`listen({ timeoutMs = 5000, signal })` resolves with the **next** positive or
-negative reaction heard **after** the request; a reaction from before the request
-does not count. It resolves `null` on timeout, when the optional `AbortSignal`
-aborts, or when the microphone stops. It rejects if the microphone was never
-started. Several requests may wait at once; one reaction answers them all.
-`timeoutMs: Infinity` waits until a reaction or stop.
-
-To react to everything instead of asking, pass `onSignal(signal, { source,
-transcript })`. It is called once per new reaction, never with neutral. `source` is
-`"words"` or `"sound"`. Every spoken phrase is a new reaction, even two negative
-phrases in a row; a laugh that keeps going is one reaction.
-
-Use it in a persistent page such as the audio test tab, not a popup or background
-script. `start()` must run from a user gesture. `start({ deviceId, processing: false })`
-selects an exact microphone and asks for input without echo cancellation, noise
-suppression, or automatic gain. Skip decisions and scroll cooldowns belong in the
-future `decision.js`; the test page never scrolls.
+`audio.js` reports **positive** or **negative** reactions; neutral is never sent.
+`decision.js` uses it through `onSignal(signal, { source, transcript })`, called once
+per new reaction. `listen({ timeoutMs })` is also available: it resolves with the
+next reaction heard after the request, or `null`. Every spoken phrase is a new
+reaction; a laugh that keeps going is one reaction.
 
 ### How it decides
 
@@ -52,10 +69,8 @@ Two detectors produce **reaction events**:
 | **Words** | Each spoken phrase, transcribed on-device, then scored for sentiment | "that's hilarious", "I love this", "keep this" | "this is so boring", "skip", "next", "ugh, gross" |
 | **Sounds** (YAMNet) | Non-verbal vocal sounds | laughing, giggling, chuckling | groaning, sighing, grunting, crying, whimpering |
 
-The newest non-neutral event sets the output and holds it for **3 seconds**, then
-the output returns to neutral. A neutral statement, a pause, or starting to speak
-does not cut a held reaction short, so the label does not flicker. `onSignal` is
-called only when the label changes.
+Each reaction is held for **3 seconds** as the current label. A neutral statement,
+a pause, or starting to speak does not cut a held reaction short.
 
 **Words.** The capture worklet finds phrases by loudness: a phrase needs at least
 0.25 s of voice and ends after a 0.15 s pause (continuous speech is analyzed at
@@ -64,7 +79,10 @@ it, because Whisper invents text for music and noise. Then:
 
 1. [Whisper tiny.en](https://huggingface.co/openai/whisper-tiny.en) transcribes the phrase.
 2. Transcripts that Whisper typically hallucinates ("Thank you.", "you",
-   `[BLANK_AUDIO]`, `(music)`) are discarded.
+   `[BLANK_AUDIO]`, `(music)`) are discarded. On music or singing, Whisper can
+   loop ("la la la ..." up to 448 tokens, 7.5 s in WebKit), blocking new phrases;
+   output is capped by clip length (about 8 tokens per second, at most 48), no
+   3-token run may repeat, and no word is kept more than 3 times in a row.
 3. [Twitter RoBERTa sentiment](https://huggingface.co/cardiffnlp/twitter-roberta-base-sentiment-latest),
    trained on short informal posts, scores positive / neutral / negative.
 4. Positive or negative wins with a score of at least **0.5** and a **0.2** lead
@@ -100,16 +118,15 @@ the work. When the Mac's GPU is available (WebGPU), the encoder runs there:
 | First Start (load models) | about 1.8 s | about 1.3 s |
 | Start again on the same page | about 0.15 s | about 1.3 s |
 
-Laughs and groans register in about 0.5 s either way. The demo page shows which
-one is in use. If the GPU is missing or fails to load, the CPU is used automatically.
+Laughs and groans register in about 0.5 s either way. If the GPU is missing or
+fails to load, the CPU is used automatically.
 
 GPU mode runs on the page thread, which pauses the page for up to about 0.17 s
 per phrase; microphone capture continues on its own thread. It can't use a
 worker, because terminating a worker that used WebGPU crashes the page in WebKit,
-including on Stop, tab close, and navigation. So GPU models stay loaded until the
-page closes, which also makes restarting quick. The CPU mode keeps its worker and
-frees it on Stop. These timings come from Playwright's WebKit build; confirm them in
-Safari itself.
+including when the frame is removed. So GPU models stay loaded until the frame is
+removed. The CPU mode keeps its worker and frees it when the microphone stops.
+These timings come from Playwright's WebKit build; confirm them in Safari itself.
 
 **Limits:** sarcasm is not detected; only English is supported; speech from the
 video is transcribed too unless you use headphones.
@@ -117,50 +134,29 @@ video is transcribed too unless you use headphones.
 ### Try it
 
 1. Run **AutoScroll (macOS)** on **My Mac** in Xcode.
-2. Enable the extension in Safari (allow unsigned extensions for local builds).
-3. Click its toolbar icon, then **Test microphone**.
-4. Click **Start listening** and allow microphone access. If the system default
-   microphone is wrong, Stop, choose it in the selector, and Start again.
-5. Say something short and pause: "that's hilarious", "ugh, skip this",
-   "I'll be right back". The page shows what it heard, the sentiment scores, and
-   the label. Laughing or groaning also works. **Listen once (5 s)** makes the same
-   request `decision.js` will and shows the result it would receive. Click **Stop**
-   to release the mic.
+2. Enable the extension in Safari (allow unsigned extensions for local builds) and
+   allow it on youtube.com.
+3. Open a YouTube Short. Reload tabs that were open before the extension loaded.
+4. Allow camera and microphone access.
+5. When "AutoScroll is on" pops up, react: say "ugh, skip this" or frown to move on;
+   laugh or say "that's hilarious" to keep watching.
 
-The microphone meter updates about ten times per second, independently of the
-models. If the macOS Sound input meter moves but this one does not, select the same
-device explicitly. With headphones on, try disabling **Reduce speaker echo and
-background noise** and restarting. Microphone and processing changes require Stop.
-
-If Safari blocks microphone capture in an extension page, serve the same files
-from localhost. From the repository root:
-
-```sh
-python3 -m http.server 8765 --bind 127.0.0.1 --directory 'AutoScroll/Shared (Extension)/Resources'
-```
-
-Open `http://localhost:8765/audio.html` in Safari and click Start. This tests audio
-only; it is not connected to scrolling.
-
-### Callbacks
-
-- `listen()` / `onSignal(signal, detail)`: decision input, positive or negative only (see above).
-- `onLabel(label)`: the held label for display, including neutral. Each reaction is
-  held for 3 seconds, then it returns to neutral. `getSignal()` returns the same label.
-- `onSpeech(status)`: `loading`, `listening`, `hearing`, `transcribing`,
-  `result` (with `transcript`, `signal`, `reason`, `scores`, timings), `unavailable`,
-  or `disabled`. If the speech models fail, sound reactions keep working.
-- `onDiagnostics(data)`: YAMNet's strongest sound and scores, plus `source`
-  (`words` or `sound`) of the active reaction.
-- `onInput(level)`: live microphone level for the meter.
-
-Pass `loadSpeechClassifier: null` for sounds only. Safari may interrupt capture;
-the page then reports an error and requires Start again.
+If nothing scrolls, say something negative, then open the toolbar popup. It shows
+each step: **Engine**, **Link** (messages from the page that reached the engine),
+**Microphone**, and **Camera** (including Safari's error, if any), **Face** (models loaded, face seen), **Speech** (models loaded), **Heard** (the
+last phrase transcribed and how it was scored), and **Scroll** (the last scroll
+attempt, or why it did not scroll). Use headphones,
+so speech from the video is not mistaken for yours.
 
 ### Files
 
-- `audio-worklet.js`: captures mono PCM, emits YAMNet windows and phrases, outputs silence (no feedback).
-- `audio.js`: YAMNet, the event/hold logic, and microphone lifecycle.
+- `popup.html` / `popup.js` / `popup.css`: toolbar popup with the on/off switch and live status.
+- `extension-interaction.js`: in YouTube tabs. Adds the hidden engine frame on Shorts, captures the microphone and camera for it, scrolls on "scroll" (3-second cooldown) and when a Short ends, pauses while you are away, shows the pop-up.
+- `engine.html` / `engine.js` / `engine.css`: the hidden engine; takes the page's audio and camera frames, posts a decision twice a second.
+- `decision.js`: `decide()`; combines face and audio.
+- `facialExpressionClassifier.js`: face detection (BlazeFace) and expression (FER+), from its own camera or from frames passed to `pushFrame()`.
+- `audio-worklet.js`: frames mono PCM into YAMNet windows and phrases; runs as an AudioWorklet or, in YouTube tabs, as a content script (`AutoScrollFramer`).
+- `audio.js`: YAMNet, reaction events, and microphone lifecycle.
 - `speech.js`: picks GPU (page thread) or CPU (`speech-worker.js`) and queues phrases.
 - `speech-models.js`: loads Whisper and the sentiment model via Transformers.js; used by both modes.
 - `speech-core.js`: transcript cleanup, sentiment gate, and keywords.
